@@ -11,7 +11,8 @@ API_BASE = "https://arastir.vip/api"
 # Bot intent'leri ayarla
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix='.', intents=intents)
+# Varsayılan help komutunu kaldır
+bot = commands.Bot(command_prefix='.', intents=intents, help_command=None)
 
 # API isteği gönderme
 async def api_get(endpoint, params):
@@ -41,11 +42,10 @@ def ana_menu_embed():
     embed.add_field(name="**.sulale**", value="`Sulale ağacı sorgula`", inline=False)
     embed.add_field(name="**.yardim**", value="`Yardım menüsü`", inline=False)
     embed.set_footer(text="Sorgulamalar gizli tutulur")
-    embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/...")  # İsteğe bağlı logo ekleyin
     return embed
 
-# .yardim komutu
-@bot.command(name='yardim', aliases=['help', 'menu'])
+# .yardim komutu (help alias'ini kaldırdık)
+@bot.command(name='yardim', aliases=['menu'])
 async def yardim(ctx):
     await ctx.send(embed=ana_menu_embed())
 
@@ -85,7 +85,6 @@ async def tc_sorgu(ctx, tc: str = None):
             color=discord.Color.gold(),
             timestamp=ctx.message.created_at
         )
-        embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/...")  # İsteğe bağlı
         embed.add_field(name="**AD SOYAD**", value=f"```{sonuc.get('ADI', '-')} {sonuc.get('SOYADI', '-')}```", inline=False)
         embed.add_field(name="**TC KİMLİK**", value=f"```{sonuc.get('TC', '-')}```", inline=True)
         embed.add_field(name="**DOĞUM TARİHİ**", value=f"```{sonuc.get('DOGUMTARIHI', '-')}```", inline=True)
