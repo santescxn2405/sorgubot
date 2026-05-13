@@ -4,6 +4,7 @@ from discord import app_commands
 import aiohttp
 import asyncio
 import os
+import json
 
 # Bot token
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -22,17 +23,37 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='.', intents=intents, help_command=None)
 
-# API istegi gonderme
+# API istegi gonderme (HTTP status kodlarini da dondur)
 async def api_get(url, params):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, params=params, timeout=30) as response:
-                if response.status == 200:
-                    return await response.json()
-                return None
+                status = response.status
+                try:
+                    data = await response.json()
+                    return data, status
+                except:
+                    return None, status
     except Exception as e:
-        print(f"API hatasi: {e}")
-        return None
+        print(f"API baglanti hatasi: {e}")
+        return None, 500
+
+# Hata mesaji olusturma fonksiyonu
+def hata_mesaji_olustur(status, message=None):
+    if status == 400:
+        return "HATA 400: Parametre eksik veya hatali. Lutfen girdiginiz bilgileri kontrol edin."
+    elif status == 404:
+        return "HATA 404: Kayit bulunamadi. Bu bilgilere ait bir kayit sistemde yok."
+    elif status == 500:
+        return "HATA 500: Veritabani baglantisi basarisiz. API sunucusunda sorun olabilir."
+    elif status == 429:
+        return "HATA 429: Cok fazla istek gonderildi. Lutfen bekleyip tekrar deneyin."
+    elif status == 403:
+        return "HATA 403: Erisim engellendi. API anahtariniz gecerli olmayabilir."
+    elif message:
+        return f"HATA {status}: {message}"
+    else:
+        return f"HATA {status}: Bilinmeyen bir hata olustu."
 
 # ==================== MODAL SINIFLARI ====================
 
@@ -43,7 +64,7 @@ class TcModal(discord.ui.Modal):
         
         self.tc = discord.ui.TextInput(
             label="TC Kimlik Numarasi",
-            placeholder="11 haneli TC girin",
+            placeholder="11 haneli TC girin (ornek: 12345678901)",
             min_length=11,
             max_length=11,
             required=True
@@ -57,23 +78,34 @@ class TcModal(discord.ui.Modal):
             await interaction.followup.send("HATA: TC numarasi sadece rakamlardan olusmalidir.", ephemeral=True)
             return
         
-        sonuc = await api_get(API_TC, {"tc": self.tc.value})
+        sonuc, status = await api_get(API_TC, {"tc": self.tc.value})
         
-        if sonuc and sonuc.get("success") == "true":
+        # API baglanti hatasi kontrolu
+        if sonuc is None:
+            embed = discord.Embed(title="BAGLANTI HATASI", description=hata_mesaji_olustur(status), color=discord.Color.red())
+            embed.set_footer(text="made by -santes")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+        
+        # Success kontrolu
+        success = sonuc.get("success")
+        if success == "true" or success == True:
             embed = discord.Embed(title="KISI BILGILERI", color=discord.Color.gold(), timestamp=interaction.created_at)
             embed.add_field(name="AD SOYAD", value=f"```{sonuc.get('ADI', '-')} {sonuc.get('SOYADI', '-')}```", inline=False)
             embed.add_field(name="TC KIMLIK", value=f"```{sonuc.get('TC', '-')}```", inline=True)
             embed.add_field(name="DOGUM TARIHI", value=f"```{sonuc.get('DOGUMTARIHI', '-')}```", inline=True)
             embed.add_field(name="NUFUS KAYDI", value=f"```{sonuc.get('NUFUSIL', '-')} / {sonuc.get('NUFUSILCE', '-')}```", inline=False)
             embed.add_field(name="ANNE", value=f"```{sonuc.get('ANNEADI', '-')}```", inline=True)
-            embed.add_field(name="ANNE TC", value=f"```{sonuc.get('ANNETC', '-')}```", inline=True)
+            embed.add_field(name="ANNE TC", value=f"```{sonuc.get('ANNETC', '-') if sonuc.get('ANNETC') else '-'}```", inline=True)
             embed.add_field(name="BABA", value=f"```{sonuc.get('BABAADI', '-')}```", inline=True)
-            embed.add_field(name="BABA TC", value=f"```{sonuc.get('BABATC', '-')}```", inline=True)
-            embed.add_field(name="UYRUK", value=f"```{sonuc.get('UYRUK', '-')}```", inline=True)
+            embed.add_field(name="BABA TC", value=f"```{sonuc.get('BABATC', '-') if sonuc.get('BABATC') else '-'}```", inline=True)
+            embed.add_field(name="UYRUK", value=f"```{sonuc.get('UYRUK', '-') if sonuc.get('UYRUK') else 'TR'}```", inline=True)
             embed.set_footer(text=f"Sorgulayan: {interaction.user.name} | made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            embed = discord.Embed(title="SONUC BULUNAMADI", description="Belirtilen TC kimlik numarasina ait kayit bulunamadi.", color=discord.Color.red())
+            # Hata mesajini goster
+            hata_aciklamasi = hata_mesaji_olustur(status, sonuc.get('message'))
+            embed = discord.Embed(title="SONUC BULUNAMADI", description=hata_aciklamasi, color=discord.Color.red())
             embed.set_footer(text="made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -103,9 +135,16 @@ class AdSoyadModal(discord.ui.Modal):
         if self.ilce.value:
             params["ilce"] = self.ilce.value
         
-        sonuc = await api_get(API_ADSOYAD, params)
+        sonuc, status = await api_get(API_ADSOYAD, params)
         
-        if sonuc and sonuc.get("success") == "true":
+        if sonuc is None:
+            embed = discord.Embed(title="BAGLANTI HATASI", description=hata_mesaji_olustur(status), color=discord.Color.red())
+            embed.set_footer(text="made by -santes")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+        
+        success = sonuc.get("success")
+        if success == "true" or success == True:
             kayitlar = sonuc.get("data", [])
             
             if len(kayitlar) == 0:
@@ -135,7 +174,8 @@ class AdSoyadModal(discord.ui.Modal):
             
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            embed = discord.Embed(title="HATA", description="API hatasi olustu veya kayit bulunamadi.", color=discord.Color.red())
+            hata_aciklamasi = hata_mesaji_olustur(status, sonuc.get('message'))
+            embed = discord.Embed(title="HATA", description=hata_aciklamasi, color=discord.Color.red())
             embed.set_footer(text="made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -154,9 +194,16 @@ class TcGsmModal(discord.ui.Modal):
             await interaction.followup.send("HATA: TC numarasi sadece rakamlardan olusmalidir.", ephemeral=True)
             return
         
-        sonuc = await api_get(API_TCGSM, {"tc": self.tc.value})
+        sonuc, status = await api_get(API_TCGSM, {"tc": self.tc.value})
         
-        if sonuc and sonuc.get("success") == "true":
+        if sonuc is None:
+            embed = discord.Embed(title="BAGLANTI HATASI", description=hata_mesaji_olustur(status), color=discord.Color.red())
+            embed.set_footer(text="made by -santes")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+        
+        success = sonuc.get("success")
+        if success == "true" or success == True:
             telefonlar = sonuc.get("data", [])
             
             if len(telefonlar) == 0:
@@ -182,7 +229,8 @@ class TcGsmModal(discord.ui.Modal):
             embed.set_footer(text=f"Sorgulayan: {interaction.user.name} | made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            embed = discord.Embed(title="HATA", description="API hatasi olustu veya kayit bulunamadi.", color=discord.Color.red())
+            hata_aciklamasi = hata_mesaji_olustur(status, sonuc.get('message'))
+            embed = discord.Embed(title="HATA", description=hata_aciklamasi, color=discord.Color.red())
             embed.set_footer(text="made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -209,9 +257,16 @@ class GsmTcModal(discord.ui.Modal):
             await interaction.followup.send("HATA: GSM 10 haneli olmalidir (Ornek: 5551234567)", ephemeral=True)
             return
         
-        sonuc = await api_get(API_GSMTC, {"gsm": gsm})
+        sonuc, status = await api_get(API_GSMTC, {"gsm": gsm})
         
-        if sonuc and sonuc.get("success") == "true":
+        if sonuc is None:
+            embed = discord.Embed(title="BAGLANTI HATASI", description=hata_mesaji_olustur(status), color=discord.Color.red())
+            embed.set_footer(text="made by -santes")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+        
+        success = sonuc.get("success")
+        if success == "true" or success == True:
             embed = discord.Embed(
                 title="NUMARA SAHIBI",
                 description=f"GSM: {gsm}",
@@ -223,7 +278,8 @@ class GsmTcModal(discord.ui.Modal):
             embed.set_footer(text=f"Sorgulayan: {interaction.user.name} | made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            embed = discord.Embed(title="SONUC BULUNAMADI", description="Belirtilen GSM numarasina ait kayit bulunamadi.", color=discord.Color.red())
+            hata_aciklamasi = hata_mesaji_olustur(status, sonuc.get('message'))
+            embed = discord.Embed(title="SONUC BULUNAMADI", description=hata_aciklamasi, color=discord.Color.red())
             embed.set_footer(text="made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -242,9 +298,16 @@ class IsyeriModal(discord.ui.Modal):
             await interaction.followup.send("HATA: TC numarasi sadece rakamlardan olusmalidir.", ephemeral=True)
             return
         
-        sonuc = await api_get(API_ISYERI, {"tc": self.tc.value})
+        sonuc, status = await api_get(API_ISYERI, {"tc": self.tc.value})
         
-        if sonuc and sonuc.get("success") == "true":
+        if sonuc is None:
+            embed = discord.Embed(title="BAGLANTI HATASI", description=hata_mesaji_olustur(status), color=discord.Color.red())
+            embed.set_footer(text="made by -santes")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+        
+        success = sonuc.get("success")
+        if success == "true" or success == True:
             embed = discord.Embed(
                 title="ISYERI BILGILERI",
                 description=f"TC: {self.tc.value}",
@@ -258,7 +321,8 @@ class IsyeriModal(discord.ui.Modal):
             embed.set_footer(text=f"Sorgulayan: {interaction.user.name} | made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            embed = discord.Embed(title="SONUC BULUNAMADI", description="Isyeri bilgisi bulunamadi.", color=discord.Color.red())
+            hata_aciklamasi = hata_mesaji_olustur(status, sonuc.get('message'))
+            embed = discord.Embed(title="SONUC BULUNAMADI", description=hata_aciklamasi, color=discord.Color.red())
             embed.set_footer(text="made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -277,9 +341,16 @@ class AdresModal(discord.ui.Modal):
             await interaction.followup.send("HATA: TC numarasi sadece rakamlardan olusmalidir.", ephemeral=True)
             return
         
-        sonuc = await api_get(API_ADRES, {"tc": self.tc.value})
+        sonuc, status = await api_get(API_ADRES, {"tc": self.tc.value})
         
-        if sonuc and sonuc.get("success") == "true":
+        if sonuc is None:
+            embed = discord.Embed(title="BAGLANTI HATASI", description=hata_mesaji_olustur(status), color=discord.Color.red())
+            embed.set_footer(text="made by -santes")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+        
+        success = sonuc.get("success")
+        if success == "true" or success == True:
             embed = discord.Embed(
                 title="ADRES BILGILERI",
                 description=f"TC: {self.tc.value}",
@@ -294,7 +365,8 @@ class AdresModal(discord.ui.Modal):
             embed.set_footer(text=f"Sorgulayan: {interaction.user.name} | made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            embed = discord.Embed(title="SONUC BULUNAMADI", description="Adres bilgisi bulunamadi.", color=discord.Color.red())
+            hata_aciklamasi = hata_mesaji_olustur(status, sonuc.get('message'))
+            embed = discord.Embed(title="SONUC BULUNAMADI", description=hata_aciklamasi, color=discord.Color.red())
             embed.set_footer(text="made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -313,9 +385,16 @@ class SulaleModal(discord.ui.Modal):
             await interaction.followup.send("HATA: TC numarasi sadece rakamlardan olusmalidir.", ephemeral=True)
             return
         
-        sonuc = await api_get(API_SULALE, {"tc": self.tc.value})
+        sonuc, status = await api_get(API_SULALE, {"tc": self.tc.value})
         
-        if sonuc and sonuc.get("success") == "true":
+        if sonuc is None:
+            embed = discord.Embed(title="BAGLANTI HATASI", description=hata_mesaji_olustur(status), color=discord.Color.red())
+            embed.set_footer(text="made by -santes")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+        
+        success = sonuc.get("success")
+        if success == "true" or success == True:
             embed = discord.Embed(
                 title="SULALE AGACI",
                 description=f"Merkez Kisi TC: {self.tc.value}",
@@ -332,14 +411,14 @@ class SulaleModal(discord.ui.Modal):
             if sonuc.get('ANNEADI'):
                 embed.add_field(
                     name="ANNE",
-                    value=f"```{sonuc.get('ANNEADI', '-')}\nTC: {sonuc.get('ANNETC', '-')}```",
+                    value=f"```{sonuc.get('ANNEADI', '-')}\nTC: {sonuc.get('ANNETC', '-') if sonuc.get('ANNETC') else '-'}```",
                     inline=True
                 )
             
             if sonuc.get('BABAADI'):
                 embed.add_field(
                     name="BABA",
-                    value=f"```{sonuc.get('BABAADI', '-')}\nTC: {sonuc.get('BABATC', '-')}```",
+                    value=f"```{sonuc.get('BABAADI', '-')}\nTC: {sonuc.get('BABATC', '-') if sonuc.get('BABATC') else '-'}```",
                     inline=True
                 )
             
@@ -360,7 +439,8 @@ class SulaleModal(discord.ui.Modal):
             embed.set_footer(text=f"Sorgulayan: {interaction.user.name} | made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            embed = discord.Embed(title="SONUC BULUNAMADI", description="Sulale agaci bilgisi bulunamadi.", color=discord.Color.red())
+            hata_aciklamasi = hata_mesaji_olustur(status, sonuc.get('message'))
+            embed = discord.Embed(title="SONUC BULUNAMADI", description=hata_aciklamasi, color=discord.Color.red())
             embed.set_footer(text="made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -409,7 +489,7 @@ async def yardim_slash(interaction: discord.Interaction):
         color=discord.Color.dark_theme()
     )
     embed.add_field(name="/tc", value="TC kimlik no ile kisi bilgisi sorgula", inline=False)
-    embed.add_field(name="/adsoyad", value="Ad soyad ile kisi arama", inline=False)
+    embed.add_field(name="/adsoyad", value="Ad soyad ile kisi arama (Il ve ilce opsiyonel)", inline=False)
     embed.add_field(name="/tcgsm", value="TC'den GSM numaralarini goster", inline=False)
     embed.add_field(name="/gsmtc", value="GSM'den TC kimlik sorgula", inline=False)
     embed.add_field(name="/isyeri", value="Isyeri bilgisi sorgula", inline=False)
@@ -423,7 +503,7 @@ async def yardim_slash(interaction: discord.Interaction):
 async def yardim_prefix(ctx):
     embed = discord.Embed(
         title="SORGULAMA BOTU",
-        description="Asagidaki komutlari kullanabilirsiniz:\n**Slash komutlar daha iyi calisir!**",
+        description="Asagidaki komutlari kullanabilirsiniz:\n**Slash komutlar (/) daha iyi calisir!**",
         color=discord.Color.dark_theme()
     )
     embed.add_field(name="/tc", value="TC kimlik no ile kisi bilgisi sorgula", inline=False)
