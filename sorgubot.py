@@ -41,19 +41,23 @@ async def api_get(endpoint: str, params: dict):
         return None
 
 
+def hata_mesaji():
+    return "❌ Kayıt bulunamadı veya bir hata oluştu."
+
+
 # ===================== DÜZELTİLMİŞ EMBED =====================
 def create_embed(title: str, data: dict):
     embed = discord.Embed(title=title, color=discord.Color.gold())
     
-    # Eğer 'data' key'i varsa içindeki listeyi kullan
+    # Eğer 'data' listesi varsa
     if isinstance(data.get("data"), list) and len(data["data"]) > 0:
-        record = data["data"][0]  # İlk kaydı al
+        record = data["data"][0]
         for key, value in record.items():
             embed.add_field(name=key.replace("_", " ").upper(), value=f"`{value if value else '-'}`", inline=True)
     else:
-        # Normal yapı
+        # Normal tek kayıt
         for key, value in data.items():
-            if key.lower() in ["success", "message", "status", "data"]:
+            if key.lower() in ["success", "message", "status", "data", "author"]:
                 continue
             embed.add_field(name=key.replace("_", " ").upper(), value=f"`{value if value else '-'}`", inline=True)
     
@@ -67,10 +71,10 @@ class TcModal(discord.ui.Modal, title="TC Sorgulama"):
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         data = await api_get("tc", {"tc": self.tc.value})
-        if data and data.get("success") == "true":
+        if data:
             await interaction.followup.send(embed=create_embed("✅ TC Sorgu Sonucu", data), ephemeral=True)
         else:
-            await interaction.followup.send("❌ Kayıt bulunamadı veya bir hata oluştu.", ephemeral=True)
+            await interaction.followup.send(hata_mesaji(), ephemeral=True)
 
 
 class AdSoyadModal(discord.ui.Modal, title="Ad Soyad Sorgulama"):
@@ -86,10 +90,10 @@ class AdSoyadModal(discord.ui.Modal, title="Ad Soyad Sorgulama"):
         if self.ilce.value: params["ilce"] = self.ilce.value
 
         data = await api_get("adsoyad", params)
-        if data and data.get("success") == "true":
+        if data and data.get("data"):
             await interaction.followup.send(embed=create_embed("✅ Ad Soyad Sorgu Sonucu", data), ephemeral=True)
         else:
-            await interaction.followup.send("❌ Kayıt bulunamadı veya bir hata oluştu.", ephemeral=True)
+            await interaction.followup.send(hata_mesaji(), ephemeral=True)
 
 
 class TcGsmModal(discord.ui.Modal, title="TC → GSM"):
@@ -97,10 +101,10 @@ class TcGsmModal(discord.ui.Modal, title="TC → GSM"):
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         data = await api_get("tcgsm", {"tc": self.tc.value})
-        if data and data.get("success") == "true":
+        if data and data.get("data"):
             await interaction.followup.send(embed=create_embed("✅ TC → GSM Sonucu", data), ephemeral=True)
         else:
-            await interaction.followup.send("❌ Kayıt bulunamadı veya bir hata oluştu.", ephemeral=True)
+            await interaction.followup.send(hata_mesaji(), ephemeral=True)
 
 
 class GsmTcModal(discord.ui.Modal, title="GSM → TC"):
@@ -109,10 +113,10 @@ class GsmTcModal(discord.ui.Modal, title="GSM → TC"):
         await interaction.response.defer(ephemeral=True)
         gsm = ''.join(filter(str.isdigit, self.gsm.value))
         data = await api_get("gsmtc", {"gsm": gsm})
-        if data and data.get("success") == "true":
+        if data and data.get("data"):
             await interaction.followup.send(embed=create_embed("✅ GSM → TC Sonucu", data), ephemeral=True)
         else:
-            await interaction.followup.send("❌ Kayıt bulunamadı veya bir hata oluştu.", ephemeral=True)
+            await interaction.followup.send(hata_mesaji(), ephemeral=True)
 
 
 # ===================== KOMUTLAR =====================
