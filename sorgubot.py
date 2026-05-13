@@ -60,10 +60,12 @@ class TcModal(ui.Modal, title='TC KIMLIK SORGULAMA'):
             embed.add_field(name="BABA", value=f"```{sonuc.get('BABAADI', '-')}```", inline=True)
             embed.add_field(name="BABA TC", value=f"```{sonuc.get('BABATC', '-')}```", inline=True)
             embed.add_field(name="UYRUK", value=f"```{sonuc.get('UYRUK', '-')}```", inline=True)
-            embed.set_footer(text=f"Sorgulayan: {interaction.user.name}")
+            embed.set_footer(text=f"Sorgulayan: {interaction.user.name} | made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            await interaction.followup.send("SONUC BULUNAMADI: Belirtilen TC kimlik numarasina ait kayit bulunamadi.", ephemeral=True)
+            embed = discord.Embed(title="SONUC BULUNAMADI", description="Belirtilen TC kimlik numarasina ait kayit bulunamadi.", color=discord.Color.red())
+            embed.set_footer(text="made by -santes")
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
 # 2. Ad Soyad Sorgulama Modal
 class AdSoyadModal(ui.Modal, title='AD SOYAD SORGULAMA'):
@@ -87,7 +89,9 @@ class AdSoyadModal(ui.Modal, title='AD SOYAD SORGULAMA'):
             kayitlar = sonuc.get("data", [])
             
             if len(kayitlar) == 0:
-                await interaction.followup.send("SONUC BULUNAMADI: Belirtilen kriterlere uygun kayit bulunamadi.", ephemeral=True)
+                embed = discord.Embed(title="SONUC BULUNAMADI", description="Belirtilen kriterlere uygun kayit bulunamadi.", color=discord.Color.red())
+                embed.set_footer(text="made by -santes")
+                await interaction.followup.send(embed=embed, ephemeral=True)
                 return
             
             embed = discord.Embed(
@@ -105,13 +109,15 @@ class AdSoyadModal(ui.Modal, title='AD SOYAD SORGULAMA'):
                 )
             
             if len(kayitlar) > 15:
-                embed.set_footer(text=f"Toplam {len(kayitlar)} kayittan ilk 15'i gosteriliyor | Sorgulayan: {interaction.user.name}")
+                embed.set_footer(text=f"Toplam {len(kayitlar)} kayittan ilk 15'i gosteriliyor | Sorgulayan: {interaction.user.name} | made by -santes")
             else:
-                embed.set_footer(text=f"Sorgulayan: {interaction.user.name}")
+                embed.set_footer(text=f"Sorgulayan: {interaction.user.name} | made by -santes")
             
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            await interaction.followup.send("HATA: API hatasi olustu veya kayit bulunamadi.", ephemeral=True)
+            embed = discord.Embed(title="HATA", description="API hatasi olustu veya kayit bulunamadi.", color=discord.Color.red())
+            embed.set_footer(text="made by -santes")
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
 # 3. TC'den GSM Sorgulama Modal
 class TcGsmModal(ui.Modal, title='TC\'DEN GSM SORGULAMA'):
@@ -130,7 +136,9 @@ class TcGsmModal(ui.Modal, title='TC\'DEN GSM SORGULAMA'):
             telefonlar = sonuc.get("data", [])
             
             if len(telefonlar) == 0:
-                await interaction.followup.send("SONUC BULUNAMADI: Bu TC'ye kayitli telefon numarasi bulunamadi.", ephemeral=True)
+                embed = discord.Embed(title="SONUC BULUNAMADI", description="Bu TC'ye kayitli telefon numarasi bulunamadi.", color=discord.Color.red())
+                embed.set_footer(text="made by -santes")
+                await interaction.followup.send(embed=embed, ephemeral=True)
                 return
             
             embed = discord.Embed(
@@ -147,10 +155,12 @@ class TcGsmModal(ui.Modal, title='TC\'DEN GSM SORGULAMA'):
                     inline=False
                 )
             
-            embed.set_footer(text=f"Sorgulayan: {interaction.user.name}")
+            embed.set_footer(text=f"Sorgulayan: {interaction.user.name} | made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            await interaction.followup.send("HATA: API hatasi olustu veya kayit bulunamadi.", ephemeral=True)
+            embed = discord.Embed(title="HATA", description="API hatasi olustu veya kayit bulunamadi.", color=discord.Color.red())
+            embed.set_footer(text="made by -santes")
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
 # 4. GSM'den TC Sorgulama Modal
 class GsmTcModal(ui.Modal, title='GSM\'DEN TC SORGULAMA'):
@@ -182,10 +192,12 @@ class GsmTcModal(ui.Modal, title='GSM\'DEN TC SORGULAMA'):
             )
             embed.add_field(name="AD SOYAD", value=f"```{sonuc.get('ADI', '-')} {sonuc.get('SOYADI', '-')}```", inline=False)
             embed.add_field(name="TC KIMLIK", value=f"```{sonuc.get('TC', '-')}```", inline=True)
-            embed.set_footer(text=f"Sorgulayan: {interaction.user.name}")
+            embed.set_footer(text=f"Sorgulayan: {interaction.user.name} | made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            await interaction.followup.send("SONUC BULUNAMADI: Belirtilen GSM numarasina ait kayit bulunamadi.", ephemeral=True)
+            embed = discord.Embed(title="SONUC BULUNAMADI", description="Belirtilen GSM numarasina ait kayit bulunamadi.", color=discord.Color.red())
+            embed.set_footer(text="made by -santes")
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
 # 5. Isyeri Sorgulama Modal
 class IsyeriModal(ui.Modal, title='ISYERI SORGULAMA'):
@@ -211,10 +223,12 @@ class IsyeriModal(ui.Modal, title='ISYERI SORGULAMA'):
             embed.add_field(name="DEPARTMAN", value=f"```{sonuc.get('Departman', '-')}```", inline=True)
             embed.add_field(name="BASLANGIC TARIHI", value=f"```{sonuc.get('BaslangicTarihi', '-')}```", inline=True)
             embed.add_field(name="SIGORTA TIPI", value=f"```{sonuc.get('SigortaTipi', '-')}```", inline=False)
-            embed.set_footer(text=f"Sorgulayan: {interaction.user.name}")
+            embed.set_footer(text=f"Sorgulayan: {interaction.user.name} | made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            await interaction.followup.send("SONUC BULUNAMADI: Isyeri bilgisi bulunamadi.", ephemeral=True)
+            embed = discord.Embed(title="SONUC BULUNAMADI", description="Isyeri bilgisi bulunamadi.", color=discord.Color.red())
+            embed.set_footer(text="made by -santes")
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
 # 6. Adres Sorgulama Modal
 class AdresModal(ui.Modal, title='ADRES SORGULAMA'):
@@ -241,12 +255,14 @@ class AdresModal(ui.Modal, title='ADRES SORGULAMA'):
             embed.add_field(name="MAHALLE", value=f"```{sonuc.get('mahalle', '-')}```", inline=True)
             embed.add_field(name="ADRES", value=f"```{sonuc.get('adres', '-')}```", inline=False)
             embed.add_field(name="KAYIT TARIHI", value=f"```{sonuc.get('kayit_tarihi', '-')}```", inline=False)
-            embed.set_footer(text=f"Sorgulayan: {interaction.user.name}")
+            embed.set_footer(text=f"Sorgulayan: {interaction.user.name} | made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            await interaction.followup.send("SONUC BULUNAMADI: Adres bilgisi bulunamadi.", ephemeral=True)
+            embed = discord.Embed(title="SONUC BULUNAMADI", description="Adres bilgisi bulunamadi.", color=discord.Color.red())
+            embed.set_footer(text="made by -santes")
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
-# 7. Sulale Sorgulama Modal
+# 7. Sulale Sorgulama Modal (TUM BILGILER GOSTERILIR)
 class SulaleModal(ui.Modal, title='SULALE SORGULAMA'):
     tc = ui.TextInput(label='TC Kimlik Numarasi', placeholder='11 haneli TC girin', min_length=11, max_length=11, required=True)
     
@@ -267,44 +283,84 @@ class SulaleModal(ui.Modal, title='SULALE SORGULAMA'):
                 timestamp=interaction.created_at
             )
             
+            # Merkez Kisi
             embed.add_field(
                 name="MERKEZ KISI",
-                value=f"```{sonuc.get('ADI', '-')} {sonuc.get('SOYADI', '-')}```\nTC: {self.tc.value}",
+                value=f"```Ad Soyad: {sonuc.get('ADI', '-')} {sonuc.get('SOYADI', '-')}\nTC: {self.tc.value}```",
                 inline=False
             )
             
+            # Anne Bilgileri
             if sonuc.get('ANNEADI'):
+                anne_tc = sonuc.get('ANNETC', '-')
                 embed.add_field(
-                    name="ANNE",
-                    value=f"```{sonuc.get('ANNEADI', '-')}```\nTC: {sonuc.get('ANNETC', '-')}",
+                    name="ANNE BILGILERI",
+                    value=f"```Ad: {sonuc.get('ANNEADI', '-')}\nTC: {anne_tc}```",
                     inline=True
                 )
             
+            # Baba Bilgileri
             if sonuc.get('BABAADI'):
+                baba_tc = sonuc.get('BABATC', '-')
                 embed.add_field(
-                    name="BABA",
-                    value=f"```{sonuc.get('BABAADI', '-')}```\nTC: {sonuc.get('BABATC', '-')}",
+                    name="BABA BILGILERI",
+                    value=f"```Ad: {sonuc.get('BABAADI', '-')}\nTC: {baba_tc}```",
                     inline=True
                 )
             
+            # Es Bilgileri (varsa)
+            if sonuc.get('ESADI'):
+                es_tc = sonuc.get('ESTC', '-')
+                embed.add_field(
+                    name="ES BILGILERI",
+                    value=f"```Ad: {sonuc.get('ESADI', '-')} {sonuc.get('ESSOYADI', '-')}\nTC: {es_tc}```",
+                    inline=False
+                )
+            
+            # Kardesler (tum kardesler gosterilir)
             kardesler = sonuc.get('KARDESLER', [])
             if kardesler:
-                kardes_listesi = "\n".join([f"{k.get('ADI', '-')} {k.get('SOYADI', '-')} (TC: {k.get('TC', '-')})" for k in kardesler[:5]])
-                if len(kardesler) > 5:
-                    kardes_listesi += f"\n...ve {len(kardesler)-5} kisi daha"
-                embed.add_field(name="KARDESLER", value=f"```{kardes_listesi}```", inline=False)
+                kardes_listesi = ""
+                for k in kardesler:
+                    kardes_listesi += f"Ad Soyad: {k.get('ADI', '-')} {k.get('SOYADI', '-')}\nTC: {k.get('TC', '-')}\nDogum: {k.get('DOGUMTARIHI', '-')}\n\n"
+                embed.add_field(
+                    name=f"KARDESLER ({len(kardesler)} KISI)",
+                    value=f"```{kardes_listesi[:1000]}```" if len(kardes_listesi) > 1000 else f"```{kardes_listesi}```",
+                    inline=False
+                )
             
+            # Cocuklar (tum cocuklar gosterilir)
             cocuklar = sonuc.get('COCUKLAR', [])
             if cocuklar:
-                cocuk_listesi = "\n".join([f"{c.get('ADI', '-')} {c.get('SOYADI', '-')} (TC: {c.get('TC', '-')})" for c in cocuklar[:5]])
-                if len(cocuklar) > 5:
-                    cocuk_listesi += f"\n...ve {len(cocuklar)-5} kisi daha"
-                embed.add_field(name="COCUKLAR", value=f"```{cocuk_listesi}```", inline=False)
+                cocuk_listesi = ""
+                for c in cocuklar:
+                    cocuk_listesi += f"Ad Soyad: {c.get('ADI', '-')} {c.get('SOYADI', '-')}\nTC: {c.get('TC', '-')}\nDogum: {c.get('DOGUMTARIHI', '-')}\n\n"
+                embed.add_field(
+                    name=f"COCUKLAR ({len(cocuklar)} KISI)",
+                    value=f"```{cocuk_listesi[:1000]}```" if len(cocuk_listesi) > 1000 else f"```{cocuk_listesi}```",
+                    inline=False
+                )
             
-            embed.set_footer(text=f"Sorgulayan: {interaction.user.name}")
+            # Torunlar (varsa)
+            torunlar = sonuc.get('TORUNLAR', [])
+            if torunlar:
+                torun_listesi = ""
+                for t in torunlar[:20]:
+                    torun_listesi += f"Ad Soyad: {t.get('ADI', '-')} {t.get('SOYADI', '-')}\nTC: {t.get('TC', '-')}\n\n"
+                if len(torunlar) > 20:
+                    torun_listesi += f"...ve {len(torunlar)-20} kisi daha"
+                embed.add_field(
+                    name=f"TORUNLAR ({len(torunlar)} KISI)",
+                    value=f"```{torun_listesi[:1000]}```" if len(torun_listesi) > 1000 else f"```{torun_listesi}```",
+                    inline=False
+                )
+            
+            embed.set_footer(text=f"Sorgulayan: {interaction.user.name} | made by -santes")
             await interaction.followup.send(embed=embed, ephemeral=True)
         else:
-            await interaction.followup.send("SONUC BULUNAMADI: Sulale agaci bilgisi bulunamadi.", ephemeral=True)
+            embed = discord.Embed(title="SONUC BULUNAMADI", description="Sulale agaci bilgisi bulunamadi.", color=discord.Color.red())
+            embed.set_footer(text="made by -santes")
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
 # ==================== KOMUTLAR ====================
 
@@ -323,7 +379,7 @@ async def yardim(ctx):
     embed.add_field(name=".isyeri", value="Isyeri bilgisi sorgula", inline=False)
     embed.add_field(name=".adres", value="Adres bilgisi sorgula", inline=False)
     embed.add_field(name=".sulale", value="Sulale agaci sorgula", inline=False)
-    embed.set_footer(text="Tum sorgulamalar gizli olarak size ozel gonderilir")
+    embed.set_footer(text="made by -santes")
     await ctx.send(embed=embed)
 
 # TC Komutu
