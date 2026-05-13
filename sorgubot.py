@@ -43,7 +43,7 @@ async def api_get(endpoint: str, params: dict):
                     try:
                         text = await resp.text()
                         data = json.loads(text)
-                        print(f"✅ API Başarılı")
+                        print(f"✅ API Başarılı: {data.get('success', 'unknown')}")
                         return data
                     except Exception as e:
                         print(f"❌ JSON Hatası: {e}")
@@ -58,30 +58,12 @@ async def api_get(endpoint: str, params: dict):
 
 # ===================== MESAJ OLUŞTURMA =====================
 def format_json_as_message(data):
-    """JSON verisini okunabilir mesaj formatına çevir"""
     if not data:
         return "❌ Veri alınamadı."
     
     message = "```json\n"
-    message += json.dumps(data, indent=2, ensure_ascii=False)[:1900]  # Discord limiti 2000 karakter
+    message += json.dumps(data, indent=2, ensure_ascii=False)[:1900]
     message += "\n```"
-    return message
-
-def format_adres_verisi(data):
-    """Adres verisini özel formatla göster"""
-    if not data or not data.get("data"):
-        return None
-    
-    veri = data["data"][0] if isinstance(data["data"], list) and len(data["data"]) > 0 else data
-    
-    message = "**🏠 ADRES BİLGİLERİ**\n\n"
-    message += f"**Kimlik No:** `{veri.get('KimlikNo', '-')}`\n"
-    message += f"**Ad Soyad:** `{veri.get('AdSoyad', '-')}`\n"
-    message += f"**Doğum Yeri:** `{veri.get('DogumYeri', '-')}`\n"
-    message += f"**Vergi Numarası:** `{veri.get('VergiNumarasi', '-')}`\n"
-    message += f"**İkametgah:** `{veri.get('Ikametgah', '-')}`\n"
-    message += f"**ID:** `{veri.get('ID', '-')}`\n"
-    message += "\n*made by -santes*"
     return message
 
 # ===================== MODALLAR =====================
@@ -96,8 +78,7 @@ class TcModal(discord.ui.Modal, title="TC Sorgulama"):
         
         if data:
             if data.get("success") == "true" or data.get("data"):
-                mesaj = format_json_as_message(data)
-                await interaction.followup.send(mesaj, ephemeral=True)
+                await interaction.followup.send(format_json_as_message(data), ephemeral=True)
             else:
                 await interaction.followup.send(f"❌ {data.get('message', 'Kayıt bulunamadı')}", ephemeral=True)
         else:
@@ -133,20 +114,19 @@ class AdSoyadModal(discord.ui.Modal, title="Ad Soyad Sorgulama"):
                     mesaj += f" - {self.il.value} {self.ilce.value}"
                 mesaj += f"\n**Bulunan:** {len(kayitlar)} kayıt\n\n"
                 
-                for i, k in enumerate(kayitlar[:20], 1):
+                for i, k in enumerate(kayitlar[:15], 1):
                     mesaj += f"**{i}. {k.get('ADI', '-')} {k.get('SOYADI', '-')}**\n"
                     mesaj += f"├ TC: {k.get('TC', '-')}\n"
                     mesaj += f"├ Doğum: {k.get('DOGUMTARIHI', '-')}\n"
                     mesaj += f"├ Nüfus: {k.get('NUFUSIL', '-')}/{k.get('NUFUSILCE', '-')}\n"
-                    mesaj += f"├ Anne: {k.get('ANNEADI', '-')} (TC: {k.get('ANNETC', '-')})\n"
-                    mesaj += f"└ Baba: {k.get('BABAADI', '-')} (TC: {k.get('BABATC', '-')})\n\n"
+                    mesaj += f"├ Anne: {k.get('ANNEADI', '-')}\n"
+                    mesaj += f"└ Baba: {k.get('BABAADI', '-')}\n\n"
                 
-                if len(kayitlar) > 20:
-                    mesaj += f"\n*...ve {len(kayitlar)-20} kayıt daha*"
+                if len(kayitlar) > 15:
+                    mesaj += f"\n*...ve {len(kayitlar)-15} kayıt daha*"
                 
                 mesaj += "\n*made by -santes*"
                 
-                # Discord mesaj limiti 2000 karakter, eğer aşarsa parçala
                 if len(mesaj) > 2000:
                     for i in range(0, len(mesaj), 1900):
                         await interaction.followup.send(mesaj[i:i+1900], ephemeral=True)
@@ -167,30 +147,36 @@ class TcGsmModal(discord.ui.Modal, title="TC'den GSM Sorgulama"):
         
         if data:
             if data.get("success") == "true" or data.get("data"):
-                mesaj = format_json_as_message(data)
-                await interaction.followup.send(mesaj, ephemeral=True)
+                await interaction.followup.send(format_json_as_message(data), ephemeral=True)
             else:
                 await interaction.followup.send(f"❌ {data.get('message', 'Kayıt bulunamadı')}", ephemeral=True)
         else:
             await interaction.followup.send("❌ API'ye bağlanılamadı.", ephemeral=True)
 
-# 4. GSM'den TC
+# 4. GSM'den TC (DÜZELTİLDİ - birden fazla endpoint dene)
 class GsmTcModal(discord.ui.Modal, title="GSM'den TC Sorgulama"):
     gsm = discord.ui.TextInput(label="GSM Numarası", placeholder="5551234567")
     
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         gsm = ''.join(filter(str.isdigit, self.gsm.value))
-        data = await api_get("gsm.php", {"gsm": gsm})
         
-        if data:
-            if data.get("success") == "true" or data.get("data"):
-                mesaj = format_json_as_message(data)
-                await interaction.followup.send(mesaj, ephemeral=True)
-            else:
-                await interaction.followup.send(f"❌ {data.get('message', 'Kayıt bulunamadı')}", ephemeral=True)
+        # Denenecek endpoint'ler
+        endpoints = ["gsmtc.php", "gsm.php", "gsm_tc.php", "telno.php", "no.php"]
+        sonuc = None
+        
+        for endpoint in endpoints:
+            print(f"🔍 Deneniyor: {endpoint}")
+            data = await api_get(endpoint, {"gsm": gsm})
+            if data and (data.get("success") == "true" or data.get("data")):
+                sonuc = data
+                print(f"✅ Başarılı endpoint: {endpoint}")
+                break
+        
+        if sonuc:
+            await interaction.followup.send(format_json_as_message(sonuc), ephemeral=True)
         else:
-            await interaction.followup.send("❌ API'ye bağlanılamadı.", ephemeral=True)
+            await interaction.followup.send("❌ GSM numarasına ait kayıt bulunamadı veya API endpoint'i çalışmıyor.", ephemeral=True)
 
 # 5. İşyeri Sorgulama
 class IsyeriModal(discord.ui.Modal, title="İşyeri Sorgulama"):
@@ -202,14 +188,13 @@ class IsyeriModal(discord.ui.Modal, title="İşyeri Sorgulama"):
         
         if data:
             if data.get("success") == "true" or data.get("data"):
-                mesaj = format_json_as_message(data)
-                await interaction.followup.send(mesaj, ephemeral=True)
+                await interaction.followup.send(format_json_as_message(data), ephemeral=True)
             else:
                 await interaction.followup.send(f"❌ {data.get('message', 'Kayıt bulunamadı')}", ephemeral=True)
         else:
             await interaction.followup.send("❌ API'ye bağlanılamadı.", ephemeral=True)
 
-# 6. Adres Sorgulama (Özel format)
+# 6. Adres Sorgulama
 class AdresModal(discord.ui.Modal, title="Adres Sorgulama"):
     tc = discord.ui.TextInput(label="TC Kimlik No", placeholder="12345678901", min_length=11, max_length=11)
     
@@ -219,15 +204,7 @@ class AdresModal(discord.ui.Modal, title="Adres Sorgulama"):
         
         if data:
             if data.get("success") == "true" or data.get("data"):
-                # Özel formatla göster
-                if data.get("api") == "tr_adres" and data.get("data"):
-                    mesaj = format_adres_verisi(data)
-                    if mesaj:
-                        await interaction.followup.send(mesaj, ephemeral=True)
-                    else:
-                        await interaction.followup.send(format_json_as_message(data), ephemeral=True)
-                else:
-                    await interaction.followup.send(format_json_as_message(data), ephemeral=True)
+                await interaction.followup.send(format_json_as_message(data), ephemeral=True)
             else:
                 await interaction.followup.send(f"❌ {data.get('message', 'Kayıt bulunamadı')}", ephemeral=True)
         else:
@@ -243,8 +220,7 @@ class SulaleModal(discord.ui.Modal, title="Sülale Sorgulama"):
         
         if data:
             if data.get("success") == "true" or data.get("data"):
-                mesaj = format_json_as_message(data)
-                await interaction.followup.send(mesaj, ephemeral=True)
+                await interaction.followup.send(format_json_as_message(data), ephemeral=True)
             else:
                 await interaction.followup.send(f"❌ {data.get('message', 'Kayıt bulunamadı')}", ephemeral=True)
         else:
