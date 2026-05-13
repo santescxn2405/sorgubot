@@ -28,35 +28,35 @@ async def api_get(endpoint: str, params: dict):
         async with aiohttp.ClientSession() as session:
             async with session.get(url, params=params, timeout=30) as resp:
                 print(f"📡 Status: {resp.status}")
-                
                 if resp.status == 200:
                     try:
                         data = await resp.json(content_type=None)
                         print(f"📦 API Cevabı: {data}")
                         return data
                     except:
-                        text = await resp.text()
-                        print(f"❌ JSON Parse Hatası - Raw: {text[:300]}")
-                        return {"success": False, "message": "JSON parse hatası"}
-                else:
-                    text = await resp.text()
-                    print(f"❌ HTTP {resp.status} - Raw: {text[:300]}")
-                    return {"success": False, "message": f"HTTP {resp.status}"}
+                        return None
+                return None
     except Exception as e:
-        print(f"❌ Bağlantı Hatası: {e}")
-        return {"success": False, "message": str(e)}
+        print(f"❌ Hata: {e}")
+        return None
 
 
-def hata_mesaji(message="Kayıt bulunamadı veya bir hata oluştu."):
-    return f"❌ {message}"
-
-
+# ===================== DÜZELTİLMİŞ EMBED =====================
 def create_embed(title: str, data: dict):
     embed = discord.Embed(title=title, color=discord.Color.gold())
-    for key, value in data.items():
-        if key.lower() in ["success", "message", "status", "data"]:
-            continue
-        embed.add_field(name=key.replace("_", " ").upper(), value=f"`{value if value else '-'}`", inline=True)
+    
+    # Eğer 'data' key'i varsa içindeki listeyi kullan
+    if isinstance(data.get("data"), list) and len(data["data"]) > 0:
+        record = data["data"][0]  # İlk kaydı al
+        for key, value in record.items():
+            embed.add_field(name=key.replace("_", " ").upper(), value=f"`{value if value else '-'}`", inline=True)
+    else:
+        # Normal yapı
+        for key, value in data.items():
+            if key.lower() in ["success", "message", "status", "data"]:
+                continue
+            embed.add_field(name=key.replace("_", " ").upper(), value=f"`{value if value else '-'}`", inline=True)
+    
     embed.set_footer(text="made by -santes")
     return embed
 
@@ -67,12 +67,10 @@ class TcModal(discord.ui.Modal, title="TC Sorgulama"):
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         data = await api_get("tc", {"tc": self.tc.value})
-        
         if data and data.get("success") == "true":
             await interaction.followup.send(embed=create_embed("✅ TC Sorgu Sonucu", data), ephemeral=True)
         else:
-            msg = data.get("message") if data else "Sunucu ile bağlantı kurulamadı."
-            await interaction.followup.send(hata_mesaji(msg), ephemeral=True)
+            await interaction.followup.send("❌ Kayıt bulunamadı veya bir hata oluştu.", ephemeral=True)
 
 
 class AdSoyadModal(discord.ui.Modal, title="Ad Soyad Sorgulama"):
@@ -91,11 +89,9 @@ class AdSoyadModal(discord.ui.Modal, title="Ad Soyad Sorgulama"):
         if data and data.get("success") == "true":
             await interaction.followup.send(embed=create_embed("✅ Ad Soyad Sorgu Sonucu", data), ephemeral=True)
         else:
-            msg = data.get("message") if data else "Sunucu ile bağlantı kurulamadı."
-            await interaction.followup.send(hata_mesaji(msg), ephemeral=True)
+            await interaction.followup.send("❌ Kayıt bulunamadı veya bir hata oluştu.", ephemeral=True)
 
 
-# Diğer modallar
 class TcGsmModal(discord.ui.Modal, title="TC → GSM"):
     tc = discord.ui.TextInput(label="TC Kimlik No", min_length=11, max_length=11)
     async def on_submit(self, interaction: discord.Interaction):
@@ -104,8 +100,7 @@ class TcGsmModal(discord.ui.Modal, title="TC → GSM"):
         if data and data.get("success") == "true":
             await interaction.followup.send(embed=create_embed("✅ TC → GSM Sonucu", data), ephemeral=True)
         else:
-            msg = data.get("message") if data else "Sunucu ile bağlantı kurulamadı."
-            await interaction.followup.send(hata_mesaji(msg), ephemeral=True)
+            await interaction.followup.send("❌ Kayıt bulunamadı veya bir hata oluştu.", ephemeral=True)
 
 
 class GsmTcModal(discord.ui.Modal, title="GSM → TC"):
@@ -117,8 +112,7 @@ class GsmTcModal(discord.ui.Modal, title="GSM → TC"):
         if data and data.get("success") == "true":
             await interaction.followup.send(embed=create_embed("✅ GSM → TC Sonucu", data), ephemeral=True)
         else:
-            msg = data.get("message") if data else "Sunucu ile bağlantı kurulamadı."
-            await interaction.followup.send(hata_mesaji(msg), ephemeral=True)
+            await interaction.followup.send("❌ Kayıt bulunamadı veya bir hata oluştu.", ephemeral=True)
 
 
 # ===================== KOMUTLAR =====================
@@ -138,18 +132,6 @@ async def tcgsm(interaction: discord.Interaction):
 async def gsmtc(interaction: discord.Interaction):
     await interaction.response.send_modal(GsmTcModal())
 
-@bot.tree.command(name="isyeri", description="TC ile işyeri sorgula")
-async def isyeri(interaction: discord.Interaction):
-    await interaction.response.send_modal(IsyeriModal())
-
-@bot.tree.command(name="adres", description="TC ile adres sorgula")
-async def adres(interaction: discord.Interaction):
-    await interaction.response.send_modal(AdresModal())
-
-@bot.tree.command(name="sulale", description="TC ile sülale sorgula")
-async def sulale(interaction: discord.Interaction):
-    await interaction.response.send_modal(SulaleModal())
-
 @bot.tree.command(name="yardim", description="Yardım menüsü")
 async def yardim(interaction: discord.Interaction):
     embed = discord.Embed(title="SANTES SORGULAMA BOTU", color=discord.Color.purple())
@@ -158,9 +140,6 @@ async def yardim(interaction: discord.Interaction):
 /adsoyad
 /tcgsm
 /gsmtc
-/isyeri
-/adres
-/sulale
 """, inline=False)
     embed.set_footer(text="made by -santes")
     await interaction.response.send_message(embed=embed, ephemeral=True)
