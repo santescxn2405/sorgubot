@@ -19,20 +19,29 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='.', intents=intents, help_command=None)
 
-# ===================== API İSTEĞİ =====================
+# ===================== API İSTEĞİ (GELİŞMİŞ DEBUG) =====================
 async def api_get(endpoint: str, params: dict):
-    url = f"{API_BASE}/{endpoint}"
+    url = f"{API_BASE}/{endpoint}.php"
+    print(f"🔍 İstek: {url} | Params: {params}")
+    
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, params=params, timeout=30) as resp:
+                print(f"📡 Status: {resp.status}")
                 if resp.status == 200:
                     try:
-                        return await resp.json(content_type=None)
-                    except:
+                        data = await resp.json(content_type=None)
+                        print(f"📦 API Cevabı: {data}")
+                        return data
+                    except Exception as e:
+                        text = await resp.text()
+                        print(f"❌ JSON Hatası: {e}\nRaw: {text[:400]}")
                         return None
-                return None
+                else:
+                    print(f"❌ HTTP Hatası: {resp.status}")
+                    return None
     except Exception as e:
-        print(f"API Hatası ({endpoint}): {e}")
+        print(f"❌ Bağlantı Hatası: {e}")
         return None
 
 
@@ -48,11 +57,7 @@ def create_embed(title: str, data: dict):
             continue
         if isinstance(value, (dict, list)):
             value = str(value)[:600]
-        embed.add_field(
-            name=key.replace("_", " ").upper(), 
-            value=f"`{value if value else '-'}`", 
-            inline=True
-        )
+        embed.add_field(name=key.replace("_", " ").upper(), value=f"`{value if value else '-'}`", inline=True)
     embed.set_footer(text="made by -santes")
     return embed
 
@@ -62,7 +67,7 @@ class TcModal(discord.ui.Modal, title="TC Sorgulama"):
     tc = discord.ui.TextInput(label="TC Kimlik No", placeholder="12345678901", min_length=11, max_length=11)
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        data = await api_get("tc.php", {"tc": self.tc.value})
+        data = await api_get("tc", {"tc": self.tc.value})
         if data and data.get("success") == "true":
             await interaction.followup.send(embed=create_embed("✅ TC Sorgu Sonucu", data), ephemeral=True)
         else:
@@ -81,7 +86,7 @@ class AdSoyadModal(discord.ui.Modal, title="Ad Soyad Sorgulama"):
         if self.il.value: params["il"] = self.il.value
         if self.ilce.value: params["ilce"] = self.ilce.value
 
-        data = await api_get("adsoyad.php", params)
+        data = await api_get("adsoyad", params)
         if data and data.get("success") == "true":
             kayitlar = data.get("data", [])[:10]
             embed = discord.Embed(title="✅ Ad Soyad Sorgu Sonuçları", color=discord.Color.gold())
@@ -97,7 +102,7 @@ class TcGsmModal(discord.ui.Modal, title="TC → GSM"):
     tc = discord.ui.TextInput(label="TC Kimlik No", min_length=11, max_length=11)
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        data = await api_get("tcgsm.php", {"tc": self.tc.value})
+        data = await api_get("tcgsm", {"tc": self.tc.value})
         if data and data.get("success") == "true":
             await interaction.followup.send(embed=create_embed("✅ TC → GSM Sonucu", data), ephemeral=True)
         else:
@@ -109,7 +114,7 @@ class GsmTcModal(discord.ui.Modal, title="GSM → TC"):
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         gsm = ''.join(filter(str.isdigit, self.gsm.value))
-        data = await api_get("gsmtc.php", {"gsm": gsm})
+        data = await api_get("gsmtc", {"gsm": gsm})
         if data and data.get("success") == "true":
             await interaction.followup.send(embed=create_embed("✅ GSM → TC Sonucu", data), ephemeral=True)
         else:
@@ -120,7 +125,7 @@ class IsyeriModal(discord.ui.Modal, title="İşyeri Sorgulama"):
     tc = discord.ui.TextInput(label="TC Kimlik No", min_length=11, max_length=11)
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        data = await api_get("isyeri.php", {"tc": self.tc.value})
+        data = await api_get("isyeri", {"tc": self.tc.value})
         if data and data.get("success") == "true":
             await interaction.followup.send(embed=create_embed("✅ İşyeri Sorgu Sonucu", data), ephemeral=True)
         else:
@@ -131,7 +136,7 @@ class AdresModal(discord.ui.Modal, title="Adres Sorgulama"):
     tc = discord.ui.TextInput(label="TC Kimlik No", min_length=11, max_length=11)
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        data = await api_get("adres.php", {"tc": self.tc.value})
+        data = await api_get("adres", {"tc": self.tc.value})
         if data and data.get("success") == "true":
             await interaction.followup.send(embed=create_embed("✅ Adres Sorgu Sonucu", data), ephemeral=True)
         else:
@@ -142,7 +147,7 @@ class SulaleModal(discord.ui.Modal, title="Sülale Sorgulama"):
     tc = discord.ui.TextInput(label="TC Kimlik No", min_length=11, max_length=11)
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        data = await api_get("sulale.php", {"tc": self.tc.value})
+        data = await api_get("sulale", {"tc": self.tc.value})
         if data and data.get("success") == "true":
             await interaction.followup.send(embed=create_embed("✅ Sülale Sorgu Sonucu", data), ephemeral=True)
         else:
