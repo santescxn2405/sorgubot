@@ -36,7 +36,12 @@ async def api_get(endpoint: str, params: dict):
 
 
 def hata_mesaji(status: int, message=None):
-    errors = {403: "❌ Erişim engellendi.", 404: "❌ Kayıt bulunamadı.", 429: "❌ Çok fazla istek.", 500: "❌ Sunucu hatası."}
+    errors = {
+        403: "❌ Erişim engellendi.",
+        404: "❌ Kayıt bulunamadı.",
+        429: "❌ Çok fazla istek gönderdin.",
+        500: "❌ Sunucu hatası."
+    }
     return errors.get(status, f"❌ HATA {status}: {message or 'Bilinmeyen hata'}")
 
 
@@ -48,7 +53,11 @@ def create_dynamic_embed(title: str, data: dict):
             continue
         if isinstance(value, (dict, list)):
             value = str(value)[:500]
-        embed.add_field(name=key.replace("_", " ").upper(), value=f"`{value if value else '-'}`", inline=True)
+        embed.add_field(
+            name=key.replace("_", " ").upper(), 
+            value=f"`{value if value else '-'}`", 
+            inline=True
+        )
     embed.set_footer(text="made by -santes")
     return embed
 
@@ -88,7 +97,7 @@ class AdSoyadModal(discord.ui.Modal, title="Ad Soyad Sorgulama"):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 
-class TcGsmModal(discord.ui.Modal, title="TC → GSM Sorgu"):
+class TcGsmModal(discord.ui.Modal, title="TC → GSM"):
     tc = discord.ui.TextInput(label="TC Kimlik No", min_length=11, max_length=11)
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -98,7 +107,7 @@ class TcGsmModal(discord.ui.Modal, title="TC → GSM Sorgu"):
         await interaction.followup.send(embed=create_dynamic_embed("✅ TC → GSM Sonucu", data), ephemeral=True)
 
 
-class GsmTcModal(discord.ui.Modal, title="GSM → TC Sorgu"):
+class GsmTcModal(discord.ui.Modal, title="GSM → TC"):
     gsm = discord.ui.TextInput(label="GSM Numarası", placeholder="5551234567")
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -140,24 +149,46 @@ class SulaleModal(discord.ui.Modal, title="Sülale Sorgulama"):
 
 
 # ===================== SLASH KOMUTLARI =====================
-for cmd_name, modal_class, desc in [
-    ("tc", TcModal, "TC ile kişi sorgula"),
-    ("adsoyad", AdSoyadModal, "Ad Soyad ile sorgu"),
-    ("tcgsm", TcGsmModal, "TC'den GSM sorgula"),
-    ("gsmtc", GsmTcModal, "GSM'den TC sorgula"),
-    ("isyeri", IsyeriModal, "TC ile işyeri sorgula"),
-    ("adres", AdresModal, "TC ile adres sorgula"),
-    ("sulale", SulaleModal, "TC ile sülale sorgula"),
-]:
-    @bot.tree.command(name=cmd_name, description=desc)
-    async def dynamic_command(interaction: discord.Interaction, modal=modal_class):
-        await interaction.response.send_modal(modal())
+@bot.tree.command(name="tc", description="TC ile kişi sorgula")
+async def tc(interaction: discord.Interaction):
+    await interaction.response.send_modal(TcModal())
 
+@bot.tree.command(name="adsoyad", description="Ad Soyad ile sorgu")
+async def adsoyad(interaction: discord.Interaction):
+    await interaction.response.send_modal(AdSoyadModal())
+
+@bot.tree.command(name="tcgsm", description="TC'den GSM sorgula")
+async def tcgsm(interaction: discord.Interaction):
+    await interaction.response.send_modal(TcGsmModal())
+
+@bot.tree.command(name="gsmtc", description="GSM'den TC sorgula")
+async def gsmtc(interaction: discord.Interaction):
+    await interaction.response.send_modal(GsmTcModal())
+
+@bot.tree.command(name="isyeri", description="TC ile işyeri sorgula")
+async def isyeri(interaction: discord.Interaction):
+    await interaction.response.send_modal(IsyeriModal())
+
+@bot.tree.command(name="adres", description="TC ile adres sorgula")
+async def adres(interaction: discord.Interaction):
+    await interaction.response.send_modal(AdresModal())
+
+@bot.tree.command(name="sulale", description="TC ile sülale sorgula")
+async def sulale(interaction: discord.Interaction):
+    await interaction.response.send_modal(SulaleModal())
 
 @bot.tree.command(name="yardim", description="Yardım menüsü")
 async def yardim(interaction: discord.Interaction):
     embed = discord.Embed(title="SANTES SORGULAMA BOTU", color=discord.Color.purple())
-    embed.add_field(name="Komutlar", value="/tc\n/adsoyad\n/tcgsm\n/gsmtc\n/isyeri\n/adres\n/sulale", inline=False)
+    embed.add_field(name="Komutlar", value="""
+/tc
+/adsoyad
+/tcgsm
+/gsmtc
+/isyeri
+/adres
+/sulale
+""", inline=False)
     embed.set_footer(text="made by -santes")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
