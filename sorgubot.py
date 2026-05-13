@@ -487,4 +487,7 @@ async def on_ready():
 
 # Bot çalıştırma
 if __name__ == "__main__":
-    bot.run(BOT_TOKEN)
+    if BOT_TOKEN:
+        bot.run(BOT_TOKEN)
+    else:
+        print("BOT_TOKEN bulunamadı! Lütfen .env dosyanızı kontrol edin.")
