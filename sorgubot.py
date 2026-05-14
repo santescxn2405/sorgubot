@@ -10,6 +10,7 @@ import aiohttp
 import asyncio
 import os
 import json
+import random
 
 # ===================== AYARLAR =====================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -20,38 +21,84 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='.', intents=intents, help_command=None)
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8",
-    "Connection": "keep-alive"
-}
+# Daha gerçekçi User-Agent listesi
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+]
 
-# ===================== API İSTEĞİ =====================
-async def api_get(endpoint: str, params: dict):
+# Cloudflare'ı aşmak için gelişmiş başlıklar
+def get_headers():
+    return {
+        "User-Agent": random.choice(USER_AGENTS),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Cache-Control": "max-age=0",
+        "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1"
+    }
+
+# ===================== API İSTEĞİ (GELİŞMİŞ) =====================
+async def api_get(endpoint: str, params: dict, retry_count=0):
     param_string = "&".join([f"{k}={v}" for k, v in params.items()])
     url = f"{API_BASE}/{endpoint}?{param_string}"
     
     print(f"🔍 İstek URL: {url}")
+    print(f"📝 Deneme: {retry_count + 1}/3")
 
     try:
-        async with aiohttp.ClientSession(headers=HEADERS) as session:
+        # Cloudflare session için cookie jar kullan
+        connector = aiohttp.TCPConnector(ssl=False)  # Bazı durumlarda SSL sorunları için
+        async with aiohttp.ClientSession(headers=get_headers(), connector=connector) as session:
             async with session.get(url, timeout=30) as resp:
                 print(f"📡 Status Code: {resp.status}")
                 
                 if resp.status == 200:
                     try:
                         text = await resp.text()
+                        # HTML yanıtı mı kontrol et
+                        if "<title>Just a moment..." in text or "Cloudflare" in text:
+                            print("⚠️ Cloudflare koruması algılandı!")
+                            if retry_count < 2:
+                                await asyncio.sleep(3)
+                                return await api_get(endpoint, params, retry_count + 1)
+                            return {"success": "false", "message": "Cloudflare koruması aşılamadı"}
+                        
                         data = json.loads(text)
                         print(f"✅ API Başarılı: {data.get('success', 'unknown')}")
                         return data
-                    except Exception as e:
-                        print(f"❌ JSON Hatası: {e}")
+                    except json.JSONDecodeError:
+                        print(f"❌ JSON Parse Hatası")
                         return None
+                elif resp.status == 403:
+                    text = await resp.text()
+                    if "Just a moment..." in text:
+                        print("⚠️ Cloudflare doğrulaması gerekiyor")
+                        if retry_count < 2:
+                            await asyncio.sleep(5)
+                            return await api_get(endpoint, params, retry_count + 1)
+                    print(f"❌ HTTP 403: {text[:200]}")
+                    return {"success": "false", "message": "Erişim engellendi (Cloudflare)"}
                 else:
                     text = await resp.text()
                     print(f"❌ HTTP Hatası {resp.status}: {text[:200]}")
                     return None
+    except asyncio.TimeoutError:
+        print("❌ Zaman aşımı")
+        if retry_count < 2:
+            await asyncio.sleep(2)
+            return await api_get(endpoint, params, retry_count + 1)
+        return None
     except Exception as e:
         print(f"❌ Bağlantı Hatası: {e}")
         return None
@@ -61,10 +108,61 @@ def format_json_as_message(data):
     if not data:
         return "❌ Veri alınamadı."
     
+    if isinstance(data, dict) and data.get("success") == "false":
+        return f"❌ {data.get('message', 'Bir hata oluştu')}"
+    
     message = "```json\n"
     message += json.dumps(data, indent=2, ensure_ascii=False)[:1900]
     message += "\n```"
     return message
+
+def format_telefon_data(data):
+    """Telefon verilerini daha okunabilir formatta göster"""
+    if not data or data.get("success") == "false":
+        return f"❌ {data.get('message', 'Telefon bilgisi bulunamadı')}"
+    
+    # Veriyi kontrol et
+    telefonlar = []
+    
+    # Farklı veri formatlarını kontrol et
+    if "data" in data:
+        telefon_listesi = data["data"]
+        if isinstance(telefon_listesi, list):
+            telefonlar = telefon_listesi
+        elif isinstance(telefon_listesi, dict):
+            telefonlar = [telefon_listesi]
+    elif "telefon" in data:
+        telefonlar = [{"telefon": data["telefon"]}]
+    elif "gsm" in data:
+        telefonlar = [{"telefon": data["gsm"]}]
+    elif "tel" in data:
+        telefonlar = [{"telefon": data["tel"]}]
+    else:
+        # Tüm alanları tara
+        for key in ["numbers", "phones", "telefonlar", "list"]:
+            if key in data and isinstance(data[key], list):
+                telefonlar = data[key]
+                break
+    
+    if not telefonlar:
+        return "❌ Telefon bilgisi bulunamadı"
+    
+    mesaj = "**📞 TELEFON BİLGİLERİ**\n\n"
+    for i, tel in enumerate(telefonlar[:10], 1):
+        if isinstance(tel, dict):
+            numara = tel.get("telefon") or tel.get("gsm") or tel.get("tel") or tel.get("number") or "Bilinmiyor"
+            operator = tel.get("operator") or tel.get("operatör") or ""
+            mesaj += f"**{i}.** `{numara}`"
+            if operator:
+                mesaj += f" - {operator}"
+            mesaj += "\n"
+        elif isinstance(tel, str):
+            mesaj += f"**{i}.** `{tel}`\n"
+    
+    if len(telefonlar) > 10:
+        mesaj += f"\n*...ve {len(telefonlar)-10} kayıt daha*"
+    
+    return mesaj
 
 # ===================== MODALLAR =====================
 
@@ -102,7 +200,7 @@ class AdSoyadModal(discord.ui.Modal, title="Ad Soyad Sorgulama"):
         data = await api_get("adsoyad.php", params)
         
         if data:
-            if data.get("success") == "true" or data.get("data"):
+            if data.get("success") == "true" and data.get("data"):
                 kayitlar = data.get("data", [])
                 if len(kayitlar) == 0:
                     await interaction.followup.send("❌ Kayıt bulunamadı.", ephemeral=True)
@@ -125,8 +223,6 @@ class AdSoyadModal(discord.ui.Modal, title="Ad Soyad Sorgulama"):
                 if len(kayitlar) > 15:
                     mesaj += f"\n*...ve {len(kayitlar)-15} kayıt daha*"
                 
-                mesaj += "\n*made by -santes*"
-                
                 if len(mesaj) > 2000:
                     for i in range(0, len(mesaj), 1900):
                         await interaction.followup.send(mesaj[i:i+1900], ephemeral=True)
@@ -137,23 +233,36 @@ class AdSoyadModal(discord.ui.Modal, title="Ad Soyad Sorgulama"):
         else:
             await interaction.followup.send("❌ API'ye bağlanılamadı.", ephemeral=True)
 
-# 3. TC'den GSM
+# 3. TC'den GSM (DÜZELTİLDİ)
 class TcGsmModal(discord.ui.Modal, title="TC'den GSM Sorgulama"):
     tc = discord.ui.TextInput(label="TC Kimlik No", placeholder="12345678901", min_length=11, max_length=11)
     
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
+        
+        # Önce tel.php dene
         data = await api_get("tel.php", {"tc": self.tc.value})
         
+        # Eğer başarısızsa alternatif endpoint'leri dene
+        if not data or data.get("success") == "false":
+            endpoints = ["telefon.php", "gsm.php", "phone.php", "iletisim.php"]
+            for endpoint in endpoints:
+                print(f"🔄 Alternatif endpoint deneniyor: {endpoint}")
+                data = await api_get(endpoint, {"tc": self.tc.value})
+                if data and data.get("success") == "true":
+                    break
+        
         if data:
-            if data.get("success") == "true" or data.get("data"):
-                await interaction.followup.send(format_json_as_message(data), ephemeral=True)
+            if data.get("success") == "true":
+                # Formatlı mesaj göster
+                formatted_msg = format_telefon_data(data)
+                await interaction.followup.send(formatted_msg, ephemeral=True)
             else:
-                await interaction.followup.send(f"❌ {data.get('message', 'Kayıt bulunamadı')}", ephemeral=True)
+                await interaction.followup.send(f"❌ {data.get('message', 'Telefon bilgisi bulunamadı')}", ephemeral=True)
         else:
-            await interaction.followup.send("❌ API'ye bağlanılamadı.", ephemeral=True)
+            await interaction.followup.send("❌ API'ye bağlanılamadı. Cloudflare koruması nedeniyle erişim engellenmiş olabilir.", ephemeral=True)
 
-# 4. GSM'den TC (DÜZELTİLDİ - birden fazla endpoint dene)
+# 4. GSM'den TC
 class GsmTcModal(discord.ui.Modal, title="GSM'den TC Sorgulama"):
     gsm = discord.ui.TextInput(label="GSM Numarası", placeholder="5551234567")
     
@@ -168,7 +277,7 @@ class GsmTcModal(discord.ui.Modal, title="GSM'den TC Sorgulama"):
         for endpoint in endpoints:
             print(f"🔍 Deneniyor: {endpoint}")
             data = await api_get(endpoint, {"gsm": gsm})
-            if data and (data.get("success") == "true" or data.get("data")):
+            if data and data.get("success") == "true":
                 sonuc = data
                 print(f"✅ Başarılı endpoint: {endpoint}")
                 break
@@ -176,7 +285,7 @@ class GsmTcModal(discord.ui.Modal, title="GSM'den TC Sorgulama"):
         if sonuc:
             await interaction.followup.send(format_json_as_message(sonuc), ephemeral=True)
         else:
-            await interaction.followup.send("❌ GSM numarasına ait kayıt bulunamadı veya API endpoint'i çalışmıyor.", ephemeral=True)
+            await interaction.followup.send("❌ GSM numarasına ait kayıt bulunamadı.", ephemeral=True)
 
 # 5. İşyeri Sorgulama
 class IsyeriModal(discord.ui.Modal, title="İşyeri Sorgulama"):
@@ -257,26 +366,27 @@ async def sulale(interaction: discord.Interaction):
 
 @bot.tree.command(name="yardim", description="Yardım menüsü")
 async def yardim(interaction: discord.Interaction):
-    embed = discord.Embed(title="SANTES SORGULAMA BOTU", color=discord.Color.purple())
-    embed.add_field(name="Komutlar", value="""
+    embed = discord.Embed(title="📱 SANTES SORGULAMA BOTU", color=discord.Color.purple())
+    embed.add_field(name="🔧 Komutlar", value="""
 `/tc` - TC ile kişi sorgula
 `/adsoyad` - Ad soyad ile sorgula (il/ilçe opsiyonel)
-`/tcgsm` - TC'den GSM sorgula
+`/tcgsm` - TC'den GSM/telefon sorgula
 `/gsmtc` - GSM'den TC sorgula
 `/isyeri` - TC ile işyeri sorgula
 `/adres` - TC ile adres sorgula
 `/sulale` - TC ile sülale sorgula
 """, inline=False)
+    embed.add_field(name="⚠️ Not", value="Bu bot sadece İLLEGALTR için yapılmıştır!", inline=False)
     embed.set_footer(text="made by -santes")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.command(name='yardim', aliases=['menu', 'help'])
 async def yardim_prefix(ctx):
-    embed = discord.Embed(title="SANTES SORGULAMA BOTU", color=discord.Color.purple())
-    embed.add_field(name="Komutlar", value="""
+    embed = discord.Embed(title=" SANTES SORGULAMA BOTU", color=discord.Color.purple())
+    embed.add_field(name="🔧 Komutlar", value="""
 `/tc` - TC ile kişi sorgula
 `/adsoyad` - Ad soyad ile sorgula
-`/tcgsm` - TC'den GSM sorgula
+`/tcgsm` - TC'den GSM/telefon sorgula
 `/gsmtc` - GSM'den TC sorgula
 `/isyeri` - TC ile işyeri sorgula
 `/adres` - TC ile adres sorgula
