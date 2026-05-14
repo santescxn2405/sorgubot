@@ -15,13 +15,23 @@ import random
 # ===================== AYARLAR =====================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-API_BASE = "https://arastir.vip/api"
+# Yetkili rol ID (sadece bu rol /apiekle komutunu kullanabilir)
+YETKILI_ROL_ID = 1479124710397579527
 
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='.', intents=intents, help_command=None)
 
-# Daha gerçekçi User-Agent listesi
+# API Base (başlangıçta boş, /apiekle ile doldurulacak)
+API_BASE = None
+
+# ===================== ROL KONTROLÜ =====================
+def has_permission(interaction: discord.Interaction) -> bool:
+    """Kullanıcının yetkili role sahip olup olmadığını kontrol et"""
+    role = discord.utils.get(interaction.user.roles, id=YETKILI_ROL_ID)
+    return role is not None
+
+# ===================== RANDOM HEADERS =====================
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
@@ -29,7 +39,6 @@ USER_AGENTS = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 ]
 
-# Cloudflare'ı aşmak için gelişmiş başlıklar
 def get_headers():
     return {
         "User-Agent": random.choice(USER_AGENTS),
@@ -48,59 +57,46 @@ def get_headers():
         "Upgrade-Insecure-Requests": "1"
     }
 
-# ===================== API İSTEĞİ (GELİŞMİŞ) =====================
+# ===================== API İSTEĞİ =====================
 async def api_get(endpoint: str, params: dict, retry_count=0):
+    if not API_BASE:
+        return {"success": "false", "message": "API adresi ayarlanmamış! /apiekle komutunu kullanın."}
+    
     param_string = "&".join([f"{k}={v}" for k, v in params.items()])
     url = f"{API_BASE}/{endpoint}?{param_string}"
-    
-    print(f"🔍 İstek URL: {url}")
-    print(f"📝 Deneme: {retry_count + 1}/3")
 
     try:
-        # Cloudflare session için cookie jar kullan
-        connector = aiohttp.TCPConnector(ssl=False)  # Bazı durumlarda SSL sorunları için
+        connector = aiohttp.TCPConnector(ssl=False)
         async with aiohttp.ClientSession(headers=get_headers(), connector=connector) as session:
             async with session.get(url, timeout=30) as resp:
-                print(f"📡 Status Code: {resp.status}")
-                
                 if resp.status == 200:
                     try:
                         text = await resp.text()
-                        # HTML yanıtı mı kontrol et
                         if "<title>Just a moment..." in text or "Cloudflare" in text:
-                            print("⚠️ Cloudflare koruması algılandı!")
                             if retry_count < 2:
                                 await asyncio.sleep(3)
                                 return await api_get(endpoint, params, retry_count + 1)
                             return {"success": "false", "message": "Cloudflare koruması aşılamadı"}
                         
                         data = json.loads(text)
-                        print(f"✅ API Başarılı: {data.get('success', 'unknown')}")
                         return data
                     except json.JSONDecodeError:
-                        print(f"❌ JSON Parse Hatası")
                         return None
                 elif resp.status == 403:
                     text = await resp.text()
                     if "Just a moment..." in text:
-                        print("⚠️ Cloudflare doğrulaması gerekiyor")
                         if retry_count < 2:
                             await asyncio.sleep(5)
                             return await api_get(endpoint, params, retry_count + 1)
-                    print(f"❌ HTTP 403: {text[:200]}")
                     return {"success": "false", "message": "Erişim engellendi (Cloudflare)"}
                 else:
-                    text = await resp.text()
-                    print(f"❌ HTTP Hatası {resp.status}: {text[:200]}")
                     return None
     except asyncio.TimeoutError:
-        print("❌ Zaman aşımı")
         if retry_count < 2:
             await asyncio.sleep(2)
             return await api_get(endpoint, params, retry_count + 1)
         return None
     except Exception as e:
-        print(f"❌ Bağlantı Hatası: {e}")
         return None
 
 # ===================== MESAJ OLUŞTURMA =====================
@@ -117,14 +113,11 @@ def format_json_as_message(data):
     return message
 
 def format_telefon_data(data):
-    """Telefon verilerini daha okunabilir formatta göster"""
     if not data or data.get("success") == "false":
         return f"❌ {data.get('message', 'Telefon bilgisi bulunamadı')}"
     
-    # Veriyi kontrol et
     telefonlar = []
     
-    # Farklı veri formatlarını kontrol et
     if "data" in data:
         telefon_listesi = data["data"]
         if isinstance(telefon_listesi, list):
@@ -137,12 +130,6 @@ def format_telefon_data(data):
         telefonlar = [{"telefon": data["gsm"]}]
     elif "tel" in data:
         telefonlar = [{"telefon": data["tel"]}]
-    else:
-        # Tüm alanları tara
-        for key in ["numbers", "phones", "telefonlar", "list"]:
-            if key in data and isinstance(data[key], list):
-                telefonlar = data[key]
-                break
     
     if not telefonlar:
         return "❌ Telefon bilgisi bulunamadı"
@@ -164,9 +151,30 @@ def format_telefon_data(data):
     
     return mesaj
 
-# ===================== MODALLAR =====================
+# ===================== APİ EKLE KOMUTU (SADCE YETKİLİ ROL) =====================
+class ApiEkleModal(discord.ui.Modal, title="API Adresi Ekle"):
+    api_adres = discord.ui.TextInput(
+        label="API Base URL",
+        placeholder="https://arastir.vip/api",
+        default="https://arastir.vip/api",
+        required=True
+    )
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        global API_BASE
+        API_BASE = self.api_adres.value.rstrip('/')
+        await interaction.response.send_message(f"✅ API adresi ayarlandı: `{API_BASE}`", ephemeral=True)
 
-# 1. TC Sorgulama
+@bot.tree.command(name="apiekle", description="API adresini ayarla (Sadece yetkili rol)")
+async def apiekle(interaction: discord.Interaction):
+    """API adresini ayarla - Sadece yetkili rol kullanabilir"""
+    if not has_permission(interaction):
+        # Yetkisi yoksa sessizce işlem yapma, hiçbir şey gösterme
+        return
+    await interaction.response.send_modal(ApiEkleModal())
+
+# ===================== MODALLAR (HERKES KULLANABİLİR) =====================
+
 class TcModal(discord.ui.Modal, title="TC Sorgulama"):
     tc = discord.ui.TextInput(label="TC Kimlik No", placeholder="12345678901", min_length=11, max_length=11)
     
@@ -182,7 +190,6 @@ class TcModal(discord.ui.Modal, title="TC Sorgulama"):
         else:
             await interaction.followup.send("❌ API'ye bağlanılamadı.", ephemeral=True)
 
-# 2. Ad Soyad Sorgulama
 class AdSoyadModal(discord.ui.Modal, title="Ad Soyad Sorgulama"):
     ad = discord.ui.TextInput(label="Ad", placeholder="Ad giriniz", required=True)
     soyad = discord.ui.TextInput(label="Soyad", placeholder="Soyad giriniz", required=True)
@@ -233,36 +240,30 @@ class AdSoyadModal(discord.ui.Modal, title="Ad Soyad Sorgulama"):
         else:
             await interaction.followup.send("❌ API'ye bağlanılamadı.", ephemeral=True)
 
-# 3. TC'den GSM (DÜZELTİLDİ)
 class TcGsmModal(discord.ui.Modal, title="TC'den GSM Sorgulama"):
     tc = discord.ui.TextInput(label="TC Kimlik No", placeholder="12345678901", min_length=11, max_length=11)
     
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         
-        # Önce tel.php dene
         data = await api_get("tel.php", {"tc": self.tc.value})
         
-        # Eğer başarısızsa alternatif endpoint'leri dene
         if not data or data.get("success") == "false":
             endpoints = ["telefon.php", "gsm.php", "phone.php", "iletisim.php"]
             for endpoint in endpoints:
-                print(f"🔄 Alternatif endpoint deneniyor: {endpoint}")
                 data = await api_get(endpoint, {"tc": self.tc.value})
                 if data and data.get("success") == "true":
                     break
         
         if data:
             if data.get("success") == "true":
-                # Formatlı mesaj göster
                 formatted_msg = format_telefon_data(data)
                 await interaction.followup.send(formatted_msg, ephemeral=True)
             else:
                 await interaction.followup.send(f"❌ {data.get('message', 'Telefon bilgisi bulunamadı')}", ephemeral=True)
         else:
-            await interaction.followup.send("❌ API'ye bağlanılamadı. Cloudflare koruması nedeniyle erişim engellenmiş olabilir.", ephemeral=True)
+            await interaction.followup.send("❌ API'ye bağlanılamadı.", ephemeral=True)
 
-# 4. GSM'den TC
 class GsmTcModal(discord.ui.Modal, title="GSM'den TC Sorgulama"):
     gsm = discord.ui.TextInput(label="GSM Numarası", placeholder="5551234567")
     
@@ -270,16 +271,13 @@ class GsmTcModal(discord.ui.Modal, title="GSM'den TC Sorgulama"):
         await interaction.response.defer(ephemeral=True)
         gsm = ''.join(filter(str.isdigit, self.gsm.value))
         
-        # Denenecek endpoint'ler
         endpoints = ["gsmtc.php", "gsm.php", "gsm_tc.php", "telno.php", "no.php"]
         sonuc = None
         
         for endpoint in endpoints:
-            print(f"🔍 Deneniyor: {endpoint}")
             data = await api_get(endpoint, {"gsm": gsm})
             if data and data.get("success") == "true":
                 sonuc = data
-                print(f"✅ Başarılı endpoint: {endpoint}")
                 break
         
         if sonuc:
@@ -287,7 +285,6 @@ class GsmTcModal(discord.ui.Modal, title="GSM'den TC Sorgulama"):
         else:
             await interaction.followup.send("❌ GSM numarasına ait kayıt bulunamadı.", ephemeral=True)
 
-# 5. İşyeri Sorgulama
 class IsyeriModal(discord.ui.Modal, title="İşyeri Sorgulama"):
     tc = discord.ui.TextInput(label="TC Kimlik No", placeholder="12345678901", min_length=11, max_length=11)
     
@@ -303,7 +300,6 @@ class IsyeriModal(discord.ui.Modal, title="İşyeri Sorgulama"):
         else:
             await interaction.followup.send("❌ API'ye bağlanılamadı.", ephemeral=True)
 
-# 6. Adres Sorgulama
 class AdresModal(discord.ui.Modal, title="Adres Sorgulama"):
     tc = discord.ui.TextInput(label="TC Kimlik No", placeholder="12345678901", min_length=11, max_length=11)
     
@@ -319,7 +315,6 @@ class AdresModal(discord.ui.Modal, title="Adres Sorgulama"):
         else:
             await interaction.followup.send("❌ API'ye bağlanılamadı.", ephemeral=True)
 
-# 7. Sülale Sorgulama
 class SulaleModal(discord.ui.Modal, title="Sülale Sorgulama"):
     tc = discord.ui.TextInput(label="TC Kimlik No", placeholder="12345678901", min_length=11, max_length=11)
     
@@ -335,7 +330,7 @@ class SulaleModal(discord.ui.Modal, title="Sülale Sorgulama"):
         else:
             await interaction.followup.send("❌ API'ye bağlanılamadı.", ephemeral=True)
 
-# ===================== SLASH KOMUTLARI =====================
+# ===================== SLASH KOMUTLARI (HERKESE AÇIK) =====================
 @bot.tree.command(name="tc", description="TC ile kişi sorgula")
 async def tc(interaction: discord.Interaction):
     await interaction.response.send_modal(TcModal())
@@ -376,13 +371,14 @@ async def yardim(interaction: discord.Interaction):
 `/adres` - TC ile adres sorgula
 `/sulale` - TC ile sülale sorgula
 """, inline=False)
-    embed.add_field(name="⚠️ Not", value="Bu bot sadece İLLEGALTR için yapılmıştır!", inline=False)
+    if not API_BASE:
+        embed.add_field(name="⚠️ Uyarı", value="API adresi ayarlanmamış! Yetkili birisi `/apiekle` komutunu kullanmalı.", inline=False)
     embed.set_footer(text="made by -santes")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 @bot.command(name='yardim', aliases=['menu', 'help'])
 async def yardim_prefix(ctx):
-    embed = discord.Embed(title=" SANTES SORGULAMA BOTU", color=discord.Color.purple())
+    embed = discord.Embed(title="📱 SANTES SORGULAMA BOTU", color=discord.Color.purple())
     embed.add_field(name="🔧 Komutlar", value="""
 `/tc` - TC ile kişi sorgula
 `/adsoyad` - Ad soyad ile sorgula
@@ -395,22 +391,22 @@ async def yardim_prefix(ctx):
     embed.set_footer(text="made by -santes")
     await ctx.send(embed=embed)
 
+# ===================== BOT OLAYI =====================
 @bot.event
 async def on_ready():
     print("=" * 50)
     print(f"✅ {bot.user} olarak giriş yapıldı!")
     print(f"🆔 Bot ID: {bot.user.id}")
+    print(f"🔐 Yetkili Rol ID: {YETKILI_ROL_ID}")
+    print(f"📡 API Durumu: {'Ayarlanmış' if API_BASE else 'Ayarlanmamış (/apiekle ile ayarlayın)'}")
     print("=" * 50)
     
     try:
         synced = await bot.tree.sync()
         print(f"✅ {len(synced)} slash komutu senkronize edildi!")
-        for cmd in synced:
-            print(f"   /{cmd.name}")
     except Exception as e:
         print(f"❌ Slash komut senkronizasyon hatası: {e}")
     
-    print("=" * 50)
     await bot.change_presence(activity=discord.Game(name=".yardim | made by -santes"))
 
 if __name__ == "__main__":
