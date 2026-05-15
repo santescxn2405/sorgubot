@@ -10,10 +10,6 @@ import aiohttp
 import asyncio
 import os
 import json
-import random
-import re
-from io import BytesIO
-from datetime import datetime
 
 # ===================== AYARLAR =====================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -24,149 +20,77 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='.', intents=intents, help_command=None)
 
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-]
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8",
+    "Connection": "keep-alive"
+}
 
-def get_headers():
-    return {
-        "User-Agent": random.choice(USER_AGENTS),
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-    }
-
-# ===================== TEMIZLEME FONKSIYONU =====================
-def clean_api_message(text):
-    """API'den gelen istenmeyen mesajlari temizle"""
-    if not text:
-        return text
-    
-    clean_patterns = [
-        r'UMARIM BU APİYİ ÜCRETLİ ALMAMIŞSINDIR',
-        r'UMARIM BU APIYI UCRETLI ALMAMISSINDIR',
-        r'umarim bu apiye ucretli almamissindir',
-        r'ÜCRETLİ ALMA',
-        r'PARALI API',
-        r'APIYİ SATIN ALMA',
-        r'BEDAVA API',
-    ]
-    
-    for pattern in clean_patterns:
-        text = re.sub(pattern, '', text, flags=re.IGNORECASE)
-    
-    text = re.sub(r'\n\s*\n', '\n\n', text)
-    text = text.strip()
-    
-    return text
-
-def clean_data_dict(data):
-    """Dictionary icindeki istenmeyen mesajlari temizle"""
-    if not isinstance(data, dict):
-        return data
-    
-    cleaned = {}
-    for key, value in data.items():
-        if isinstance(value, str):
-            cleaned_value = clean_api_message(value)
-            if cleaned_value:
-                cleaned[key] = cleaned_value
-        elif isinstance(value, dict):
-            cleaned[key] = clean_data_dict(value)
-        elif isinstance(value, list):
-            cleaned[key] = [clean_data_dict(item) if isinstance(item, dict) else 
-                           clean_api_message(item) if isinstance(item, str) else item 
-                           for item in value]
-        else:
-            cleaned[key] = value
-    
-    return cleaned
-
-# ===================== API ISTEGI =====================
-async def api_get(endpoint: str, params: dict, retry_count=0):
+# ===================== API İSTEĞİ =====================
+async def api_get(endpoint: str, params: dict):
     param_string = "&".join([f"{k}={v}" for k, v in params.items()])
     url = f"{API_BASE}/{endpoint}?{param_string}"
+    
+    print(f"🔍 İstek URL: {url}")
 
     try:
-        connector = aiohttp.TCPConnector(ssl=False)
-        async with aiohttp.ClientSession(headers=get_headers(), connector=connector) as session:
+        async with aiohttp.ClientSession(headers=HEADERS) as session:
             async with session.get(url, timeout=30) as resp:
+                print(f"📡 Status Code: {resp.status}")
+                
                 if resp.status == 200:
                     try:
                         text = await resp.text()
-                        if "<title>Just a moment..." in text or "Cloudflare" in text:
-                            if retry_count < 2:
-                                await asyncio.sleep(3)
-                                return await api_get(endpoint, params, retry_count + 1)
-                            return {"success": "false", "message": "Cloudflare korumasi asilamadi"}
                         data = json.loads(text)
-                        cleaned_data = clean_data_dict(data)
-                        return cleaned_data
-                    except json.JSONDecodeError:
+                        print(f"✅ API Başarılı")
+                        return data
+                    except Exception as e:
+                        print(f"❌ JSON Hatası: {e}")
                         return None
-                elif resp.status == 403:
-                    return {"success": "false", "message": "Erisim engellendi"}
                 else:
+                    text = await resp.text()
+                    print(f"❌ HTTP Hatası {resp.status}: {text[:200]}")
                     return None
     except Exception as e:
+        print(f"❌ Bağlantı Hatası: {e}")
         return None
 
-# ===================== TXT DOSYASI OLUSTURMA =====================
-def create_full_txt(data, query_type, query_value, raw_data):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cleaned_raw = clean_data_dict(raw_data)
-    
-    content = []
-    content.append("=" * 70)
-    content.append("SANTES SORGULAMA SISTEMI - TUM VERILER")
-    content.append("=" * 70)
-    content.append(f"Sorgu Tarihi: {timestamp}")
-    content.append(f"Sorgu Tipi: {query_type}")
-    content.append(f"Sorgu Degeri: {query_value}")
-    content.append("=" * 70)
-    content.append("")
-    
-    content.append("FORMATLI VERI")
-    content.append("-" * 50)
-    if isinstance(data, dict):
-        for key, value in data.items():
-            if key == "data" and isinstance(value, (list, dict)):
-                content.append(f"\n[ {key.upper()} ]")
-                content.append(json.dumps(value, indent=2, ensure_ascii=False))
-            elif value:
-                content.append(f"\n[ {key.upper()} ]: {value}")
-    else:
-        content.append(json.dumps(data, indent=2, ensure_ascii=False))
-    
-    content.append("")
-    content.append("=" * 70)
-    content.append("HAM JSON VERISI (RAW DATA)")
-    content.append("-" * 50)
-    content.append(json.dumps(cleaned_raw, indent=2, ensure_ascii=False))
-    content.append("")
-    content.append("=" * 70)
-    content.append("made by -santes")
-    
-    return "\n".join(content)
-
+# ===================== MESAJ OLUŞTURMA =====================
 def format_json_as_message(data):
     if not data:
-        return "**VERI ALINAMADI**"
+        return "❌ Veri alınamadı."
     
-    if isinstance(data, dict) and data.get("success") == "false":
-        return f"**{data.get('message', 'Bir hata olustu')}**"
-    
-    cleaned_data = clean_data_dict(data)
     message = "```json\n"
-    message += json.dumps(cleaned_data, indent=2, ensure_ascii=False)[:1900]
+    message += json.dumps(data, indent=2, ensure_ascii=False)[:1900]
     message += "\n```"
     return message
 
+async def send_long_message(interaction, message, ephemeral=True):
+    """Uzun mesajları parçalara bölerek gönder"""
+    if len(message) <= 2000:
+        await interaction.followup.send(message, ephemeral=ephemeral)
+    else:
+        parts = []
+        current_part = ""
+        for line in message.split('\n'):
+            if len(current_part) + len(line) + 1 > 1900:
+                parts.append(current_part)
+                current_part = line + '\n'
+            else:
+                current_part += line + '\n'
+        if current_part:
+            parts.append(current_part)
+        
+        for i, part in enumerate(parts):
+            if i == 0:
+                await interaction.followup.send(part, ephemeral=ephemeral)
+            else:
+                await interaction.followup.send(part, ephemeral=ephemeral)
+
 # ===================== MODALLAR =====================
 
+# 1. TC Sorgulama
 class TcModal(discord.ui.Modal, title="TC Sorgulama"):
     tc = discord.ui.TextInput(label="TC Kimlik No", placeholder="12345678901", min_length=11, max_length=11)
     
@@ -177,19 +101,17 @@ class TcModal(discord.ui.Modal, title="TC Sorgulama"):
         if data:
             if data.get("success") == "true" or data.get("data"):
                 await interaction.followup.send(format_json_as_message(data), ephemeral=True)
-                txt_content = create_full_txt(data, "TC Sorgulama", self.tc.value, data)
-                file = discord.File(BytesIO(txt_content.encode('utf-8')), filename="data.txt")
-                await interaction.followup.send("**Tum verileri iceren dosya:**", file=file, ephemeral=True)
             else:
-                await interaction.followup.send(f"**{data.get('message', 'Kayit bulunamadi')}**", ephemeral=True)
+                await interaction.followup.send(f"❌ {data.get('message', 'Kayıt bulunamadı')}", ephemeral=True)
         else:
-            await interaction.followup.send("**API'ye baglanilamadi**", ephemeral=True)
+            await interaction.followup.send("❌ API'ye bağlanılamadı.", ephemeral=True)
 
+# 2. Ad Soyad Sorgulama (TÜM KAYITLAR - AYNI SENDEKİ GİBİ)
 class AdSoyadModal(discord.ui.Modal, title="Ad Soyad Sorgulama"):
     ad = discord.ui.TextInput(label="Ad", placeholder="Ad giriniz", required=True)
     soyad = discord.ui.TextInput(label="Soyad", placeholder="Soyad giriniz", required=True)
-    il = discord.ui.TextInput(label="Il (Opsiyonel)", placeholder="Istanbul", required=False)
-    ilce = discord.ui.TextInput(label="Ilce (Opsiyonel)", placeholder="Kadikoy", required=False)
+    il = discord.ui.TextInput(label="İl (Opsiyonel)", placeholder="İstanbul", required=False)
+    ilce = discord.ui.TextInput(label="İlçe (Opsiyonel)", placeholder="Kadıköy", required=False)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -202,76 +124,79 @@ class AdSoyadModal(discord.ui.Modal, title="Ad Soyad Sorgulama"):
         data = await api_get("adsoyad.php", params)
         
         if data:
-            if data.get("success") == "true" and data.get("data"):
+            if data.get("success") == "true" or data.get("data"):
                 kayitlar = data.get("data", [])
                 if len(kayitlar) == 0:
-                    await interaction.followup.send("**Kayit bulunamadi**", ephemeral=True)
+                    await interaction.followup.send("❌ Kayıt bulunamadı.", ephemeral=True)
                     return
                 
-                mesaj = f"**AD SOYAD SORGULAMA SONUCU**\n"
-                mesaj += f"**Aranan:** {self.ad.value} {self.soyad.value}\n"
-                mesaj += f"**Bulunan:** {len(kayitlar)} kayit\n\n"
+                baslik = f"**📋 AD SOYAD SORGULAMA SONUCU**\n"
+                baslik += f"**Aranan:** {self.ad.value} {self.soyad.value}"
+                if self.il.value:
+                    baslik += f" - {self.il.value} {self.ilce.value}"
+                baslik += f"\n**Bulunan:** {len(kayitlar)} kayıt\n\n"
                 
-                for i, k in enumerate(kayitlar[:5], 1):
-                    mesaj += f"**{i}. {k.get('ADI', '-')} {k.get('SOYADI', '-')}**\n"
-                    mesaj += f"TC: {k.get('TC', '-')}\n"
-                    mesaj += f"Dogum: {k.get('DOGUMTARIHI', '-')}\n"
-                    mesaj += f"Nufus: {k.get('NUFUSIL', '-')}/{k.get('NUFUSILCE', '-')}\n\n"
+                mesaj = baslik
+                for i, k in enumerate(kayitlar, 1):
+                    kayit_mesaji = f"**{i}. {k.get('ADI', '-')} {k.get('SOYADI', '-')}**\n"
+                    kayit_mesaji += f"├ TC: {k.get('TC', '-')}\n"
+                    kayit_mesaji += f"├ Doğum: {k.get('DOGUMTARIHI', '-')}\n"
+                    kayit_mesaji += f"├ Nüfus: {k.get('NUFUSIL', '-')}/{k.get('NUFUSILCE', '-')}\n"
+                    kayit_mesaji += f"├ Anne: {k.get('ANNEADI', '-')} (TC: {k.get('ANNETC', '-')})\n"
+                    kayit_mesaji += f"└ Baba: {k.get('BABAADI', '-')} (TC: {k.get('BABATC', '-')})\n\n"
+                    
+                    if len(mesaj) + len(kayit_mesaji) > 1900:
+                        mesaj += "\n*made by -santes*"
+                        await send_long_message(interaction, mesaj)
+                        mesaj = baslik + f"\n*...devam ediyor*\n\n"
+                    
+                    mesaj += kayit_mesaji
                 
-                if len(kayitlar) > 5:
-                    mesaj += f"**...tum kayitlar txt dosyasinda**"
-                
-                await interaction.followup.send(mesaj, ephemeral=True)
-                
-                txt_content = create_full_txt(data, "Ad Soyad Sorgulama", f"{self.ad.value} {self.soyad.value}", data)
-                file = discord.File(BytesIO(txt_content.encode('utf-8')), filename="data.txt")
-                await interaction.followup.send("**Tum kayitlari iceren dosya:**", file=file, ephemeral=True)
+                if mesaj != baslik:
+                    mesaj += "\n*made by -santes*"
+                    await send_long_message(interaction, mesaj)
+                else:
+                    await interaction.followup.send("❌ Kayıt bulunamadı.", ephemeral=True)
             else:
-                await interaction.followup.send(f"**{data.get('message', 'Kayit bulunamadi')}**", ephemeral=True)
+                await interaction.followup.send(f"❌ {data.get('message', 'Kayıt bulunamadı')}", ephemeral=True)
         else:
-            await interaction.followup.send("**API'ye baglanilamadi**", ephemeral=True)
+            await interaction.followup.send("❌ API'ye bağlanılamadı.", ephemeral=True)
 
-class TcGsmModal(discord.ui.Modal, title="TC GSM Sorgulama"):
+# 3. TC'den GSM - DOKÜMANTASYONA GÖRE tcgsm.php
+class TcGsmModal(discord.ui.Modal, title="TC'den GSM Sorgulama"):
     tc = discord.ui.TextInput(label="TC Kimlik No", placeholder="12345678901", min_length=11, max_length=11)
     
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        # Dokumantasyona gore tcgsm.php kullaniliyor
         data = await api_get("tcgsm.php", {"tc": self.tc.value})
         
         if data:
             if data.get("success") == "true" or data.get("data"):
-                await interaction.followup.send(format_telefon_data(data), ephemeral=True)
-                txt_content = create_full_txt(data, "TC GSM Sorgulama", self.tc.value, data)
-                file = discord.File(BytesIO(txt_content.encode('utf-8')), filename="data.txt")
-                await interaction.followup.send("**Tum verileri iceren dosya:**", file=file, ephemeral=True)
+                await interaction.followup.send(format_json_as_message(data), ephemeral=True)
             else:
-                await interaction.followup.send(f"**{data.get('message', 'Telefon bilgisi bulunamadi')}**", ephemeral=True)
+                await interaction.followup.send(f"❌ {data.get('message', 'Kayıt bulunamadı')}", ephemeral=True)
         else:
-            await interaction.followup.send("**API'ye baglanilamadi**", ephemeral=True)
+            await interaction.followup.send("❌ API'ye bağlanılamadı.", ephemeral=True)
 
-class GsmTcModal(discord.ui.Modal, title="GSM TC Sorgulama"):
-    gsm = discord.ui.TextInput(label="GSM Numarasi", placeholder="5551234567", min_length=10, max_length=10)
+# 4. GSM'den TC - DOKÜMANTASYONA GÖRE gsmtc.php
+class GsmTcModal(discord.ui.Modal, title="GSM'den TC Sorgulama"):
+    gsm = discord.ui.TextInput(label="GSM Numarası", placeholder="5551234567", min_length=10, max_length=10)
     
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         gsm = ''.join(filter(str.isdigit, self.gsm.value))
-        
-        # Dokumantasyona gore gsmtc.php kullaniliyor
         data = await api_get("gsmtc.php", {"gsm": gsm})
         
         if data:
             if data.get("success") == "true" or data.get("data"):
                 await interaction.followup.send(format_json_as_message(data), ephemeral=True)
-                txt_content = create_full_txt(data, "GSM TC Sorgulama", gsm, data)
-                file = discord.File(BytesIO(txt_content.encode('utf-8')), filename="data.txt")
-                await interaction.followup.send("**Tum verileri iceren dosya:**", file=file, ephemeral=True)
             else:
-                await interaction.followup.send(f"**{data.get('message', 'GSM numarasina ait kayit bulunamadi')}**", ephemeral=True)
+                await interaction.followup.send(f"❌ {data.get('message', 'Kayıt bulunamadı')}", ephemeral=True)
         else:
-            await interaction.followup.send("**API'ye baglanilamadi**", ephemeral=True)
+            await interaction.followup.send("❌ API'ye bağlanılamadı.", ephemeral=True)
 
-class IsyeriModal(discord.ui.Modal, title="Isyeri Sorgulama"):
+# 5. İşyeri Sorgulama
+class IsyeriModal(discord.ui.Modal, title="İşyeri Sorgulama"):
     tc = discord.ui.TextInput(label="TC Kimlik No", placeholder="12345678901", min_length=11, max_length=11)
     
     async def on_submit(self, interaction: discord.Interaction):
@@ -281,14 +206,12 @@ class IsyeriModal(discord.ui.Modal, title="Isyeri Sorgulama"):
         if data:
             if data.get("success") == "true" or data.get("data"):
                 await interaction.followup.send(format_json_as_message(data), ephemeral=True)
-                txt_content = create_full_txt(data, "Isyeri Sorgulama", self.tc.value, data)
-                file = discord.File(BytesIO(txt_content.encode('utf-8')), filename="data.txt")
-                await interaction.followup.send("**Tum verileri iceren dosya:**", file=file, ephemeral=True)
             else:
-                await interaction.followup.send(f"**{data.get('message', 'Kayit bulunamadi')}**", ephemeral=True)
+                await interaction.followup.send(f"❌ {data.get('message', 'Kayıt bulunamadı')}", ephemeral=True)
         else:
-            await interaction.followup.send("**API'ye baglanilamadi**", ephemeral=True)
+            await interaction.followup.send("❌ API'ye bağlanılamadı.", ephemeral=True)
 
+# 6. Adres Sorgulama
 class AdresModal(discord.ui.Modal, title="Adres Sorgulama"):
     tc = discord.ui.TextInput(label="TC Kimlik No", placeholder="12345678901", min_length=11, max_length=11)
     
@@ -299,15 +222,13 @@ class AdresModal(discord.ui.Modal, title="Adres Sorgulama"):
         if data:
             if data.get("success") == "true" or data.get("data"):
                 await interaction.followup.send(format_json_as_message(data), ephemeral=True)
-                txt_content = create_full_txt(data, "Adres Sorgulama", self.tc.value, data)
-                file = discord.File(BytesIO(txt_content.encode('utf-8')), filename="data.txt")
-                await interaction.followup.send("**Tum verileri iceren dosya:**", file=file, ephemeral=True)
             else:
-                await interaction.followup.send(f"**{data.get('message', 'Kayit bulunamadi')}**", ephemeral=True)
+                await interaction.followup.send(f"❌ {data.get('message', 'Kayıt bulunamadı')}", ephemeral=True)
         else:
-            await interaction.followup.send("**API'ye baglanilamadi**", ephemeral=True)
+            await interaction.followup.send("❌ API'ye bağlanılamadı.", ephemeral=True)
 
-class SulaleModal(discord.ui.Modal, title="Sulale Sorgulama"):
+# 7. Sülale Sorgulama
+class SulaleModal(discord.ui.Modal, title="Sülale Sorgulama"):
     tc = discord.ui.TextInput(label="TC Kimlik No", placeholder="12345678901", min_length=11, max_length=11)
     
     async def on_submit(self, interaction: discord.Interaction):
@@ -317,47 +238,13 @@ class SulaleModal(discord.ui.Modal, title="Sulale Sorgulama"):
         if data:
             if data.get("success") == "true" or data.get("data"):
                 await interaction.followup.send(format_json_as_message(data), ephemeral=True)
-                txt_content = create_full_txt(data, "Sulale Sorgulama", self.tc.value, data)
-                file = discord.File(BytesIO(txt_content.encode('utf-8')), filename="data.txt")
-                await interaction.followup.send("**Tum verileri iceren dosya:**", file=file, ephemeral=True)
             else:
-                await interaction.followup.send(f"**{data.get('message', 'Kayit bulunamadi')}**", ephemeral=True)
+                await interaction.followup.send(f"❌ {data.get('message', 'Kayıt bulunamadı')}", ephemeral=True)
         else:
-            await interaction.followup.send("**API'ye baglanilamadi**", ephemeral=True)
+            await interaction.followup.send("❌ API'ye bağlanılamadı.", ephemeral=True)
 
-# ===================== TELEFON FORMAT =====================
-def format_telefon_data(data):
-    if not data or data.get("success") == "false":
-        return f"**{data.get('message', 'Telefon bilgisi bulunamadi')}**"
-    
-    telefonlar = []
-    if "data" in data:
-        telefon_listesi = data["data"]
-        if isinstance(telefon_listesi, list):
-            telefonlar = telefon_listesi
-    
-    if not telefonlar:
-        return "**Telefon bilgisi bulunamadi**"
-    
-    mesaj = "**TELEFON BILGILERI**\n\n"
-    for i, tel in enumerate(telefonlar[:10], 1):
-        if isinstance(tel, dict):
-            numara = tel.get("telefon") or tel.get("gsm") or tel.get("tel") or "Bilinmiyor"
-            operator = tel.get("operator") or tel.get("operatör") or ""
-            mesaj += f"**{i}.** `{numara}`"
-            if operator:
-                mesaj += f" - {operator}"
-            mesaj += "\n"
-        elif isinstance(tel, str):
-            mesaj += f"**{i}.** `{tel}`\n"
-    
-    if len(telefonlar) > 10:
-        mesaj += f"\n**...ve {len(telefonlar)-10} kayit daha**"
-    
-    return mesaj
-
-# ===================== KOMUTLAR =====================
-@bot.tree.command(name="tc", description="TC ile kisi sorgula")
+# ===================== SLASH KOMUTLARI =====================
+@bot.tree.command(name="tc", description="TC ile kişi sorgula")
 async def tc(interaction: discord.Interaction):
     await interaction.response.send_modal(TcModal())
 
@@ -365,15 +252,15 @@ async def tc(interaction: discord.Interaction):
 async def adsoyad(interaction: discord.Interaction):
     await interaction.response.send_modal(AdSoyadModal())
 
-@bot.tree.command(name="tcgsm", description="TC GSM sorgula")
+@bot.tree.command(name="tcgsm", description="TC'den GSM sorgula")
 async def tcgsm(interaction: discord.Interaction):
     await interaction.response.send_modal(TcGsmModal())
 
-@bot.tree.command(name="gsmtc", description="GSM TC sorgula")
+@bot.tree.command(name="gsmtc", description="GSM'den TC sorgula")
 async def gsmtc(interaction: discord.Interaction):
     await interaction.response.send_modal(GsmTcModal())
 
-@bot.tree.command(name="isyeri", description="TC ile isyeri sorgula")
+@bot.tree.command(name="isyeri", description="TC ile işyeri sorgula")
 async def isyeri(interaction: discord.Interaction):
     await interaction.response.send_modal(IsyeriModal())
 
@@ -381,45 +268,60 @@ async def isyeri(interaction: discord.Interaction):
 async def adres(interaction: discord.Interaction):
     await interaction.response.send_modal(AdresModal())
 
-@bot.tree.command(name="sulale", description="TC ile sulale sorgula")
+@bot.tree.command(name="sulale", description="TC ile sülale sorgula")
 async def sulale(interaction: discord.Interaction):
     await interaction.response.send_modal(SulaleModal())
 
-@bot.tree.command(name="yardim", description="Yardim menusu")
+@bot.tree.command(name="yardim", description="Yardım menüsü")
 async def yardim(interaction: discord.Interaction):
     embed = discord.Embed(title="SANTES SORGULAMA BOTU", color=discord.Color.purple())
-    embed.add_field(name="KOMUTLAR", value="""
-`/tc` - TC ile kisi sorgula (Tum veriler txt olarak gelir)
-`/adsoyad` - Ad soyad ile sorgula (il/ilce opsiyonel)
-`/tcgsm` - TC ile GSM/telefon sorgula
-`/gsmtc` - GSM ile TC sorgula
-`/isyeri` - TC ile isyeri sorgula
+    embed.add_field(name="Komutlar", value="""
+`/tc` - TC ile kişi sorgula
+`/adsoyad` - Ad soyad ile sorgula (il/ilçe opsiyonel)
+`/tcgsm` - TC'den GSM sorgula
+`/gsmtc` - GSM'den TC sorgula
+`/isyeri` - TC ile işyeri sorgula
 `/adres` - TC ile adres sorgula
-`/sulale` - TC ile sulale sorgula
+`/sulale` - TC ile sülale sorgula
 """, inline=False)
-    embed.add_field(name="DOSYA", value="Tum sorgu sonuclari **data.txt** olarak indirilebilir.", inline=False)
     embed.set_footer(text="made by -santes")
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.command(name='yardim', aliases=['menu', 'help'])
+async def yardim_prefix(ctx):
+    embed = discord.Embed(title="SANTES SORGULAMA BOTU", color=discord.Color.purple())
+    embed.add_field(name="Komutlar", value="""
+`/tc` - TC ile kişi sorgula
+`/adsoyad` - Ad soyad ile sorgula
+`/tcgsm` - TC'den GSM sorgula
+`/gsmtc` - GSM'den TC sorgula
+`/isyeri` - TC ile işyeri sorgula
+`/adres` - TC ile adres sorgula
+`/sulale` - TC ile sülale sorgula
+""", inline=False)
+    embed.set_footer(text="made by -santes")
+    await ctx.send(embed=embed)
 
 @bot.event
 async def on_ready():
     print("=" * 50)
-    print(f"{bot.user} olarak giris yapildi!")
-    print(f"Bot ID: {bot.user.id}")
+    print(f"✅ {bot.user} olarak giriş yapıldı!")
+    print(f"🆔 Bot ID: {bot.user.id}")
     print("=" * 50)
     
     try:
         synced = await bot.tree.sync()
-        print(f"{len(synced)} slash komutu senkronize edildi!")
+        print(f"✅ {len(synced)} slash komutu senkronize edildi!")
         for cmd in synced:
             print(f"   /{cmd.name}")
     except Exception as e:
-        print(f"Hata: {e}")
+        print(f"❌ Slash komut senkronizasyon hatası: {e}")
     
+    print("=" * 50)
     await bot.change_presence(activity=discord.Game(name=".yardim | made by -santes"))
 
 if __name__ == "__main__":
     if not BOT_TOKEN:
-        print("BOT_TOKEN bulunamadi!")
+        print("❌ BOT_TOKEN bulunamadı!")
     else:
         bot.run(BOT_TOKEN)
